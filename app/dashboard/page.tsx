@@ -86,6 +86,12 @@ function formatDate(dateStr: string) {
   return `${d}/${m}`
 }
 
+function formatDateFull(dateStr: string) {
+  if (!dateStr) return 'DD/MM/AAAA'
+  const [year, m, d] = dateStr.split('-')
+  return `${d}/${m}/${year}`
+}
+
 function generateCode() {
   return Math.random().toString(36).substring(2, 10).toUpperCase()
 }
@@ -496,15 +502,21 @@ export default function Dashboard() {
               {/* Fecha — restringida al mes seleccionado */}
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1.5">Fecha de compra</label>
-                <input
-                  type="date"
-                  value={formDate}
-                  onChange={e => setFormDate(e.target.value)}
-                  required
-                  min={dateMin}
-                  max={dateMax}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 text-gray-800"
-                />
+                <div className="relative">
+                  <div className="w-full px-4 py-3 rounded-xl border border-gray-200 text-gray-800 flex items-center justify-between pointer-events-none">
+                    <span>{formatDateFull(formDate)}</span>
+                    <span className="text-gray-400 text-base">📅</span>
+                  </div>
+                  <input
+                    type="date"
+                    value={formDate}
+                    onChange={e => setFormDate(e.target.value)}
+                    required
+                    min={dateMin}
+                    max={dateMax}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                </div>
               </div>
 
               {/* Moneda */}
