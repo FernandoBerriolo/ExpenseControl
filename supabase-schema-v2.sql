@@ -6,8 +6,13 @@
 -- 0. Agregar columnas nuevas a gastos existentes
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS expense_date DATE;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS bank TEXT CHECK (bank IN ('Itaú', 'Scotiabank', 'BROU'));
--- Actualizar moneda si quedó como ARS
+
+-- Primero dropear el check constraint viejo
+ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_currency_check;
+-- Actualizar los datos antes de agregar el nuevo constraint
 UPDATE expenses SET currency = 'UYU' WHERE currency = 'ARS';
+-- Recién ahora agregar el nuevo constraint
+ALTER TABLE expenses ADD CONSTRAINT expenses_currency_check CHECK (currency IN ('UYU', 'USD'));
 -- Rellenar fecha con created_at donde no haya
 UPDATE expenses SET expense_date = created_at::DATE WHERE expense_date IS NULL;
 
