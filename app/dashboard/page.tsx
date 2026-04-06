@@ -346,10 +346,10 @@ export default function Dashboard() {
             )}
             <button
               onClick={() => { setShowShare(true); setJoinError(''); setJoinSuccess(''); setJoinCode('') }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-semibold"
+              className="w-9 h-9 flex items-center justify-center rounded-xl text-lg"
               style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}
             >
-              <span>🔗</span> Compartir
+              🔗
             </button>
             <button onClick={handleLogout} className="text-white/70 hover:text-white text-sm px-1">
               Salir
