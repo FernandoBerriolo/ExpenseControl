@@ -497,13 +497,13 @@ export default function Dashboard() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1.5">Banco <span className="text-gray-400 font-normal">(opcional)</span></label>
+                <label className="block text-sm font-medium text-gray-600 mb-1.5">Tarjeta utilizada</label>
                 <select
                   value={formBank}
                   onChange={e => setFormBank(e.target.value)}
                   className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 text-gray-800 transition-all bg-white"
                 >
-                  <option value="">Sin banco</option>
+                  <option value="">Otros</option>
                   {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
                 </select>
               </div>
