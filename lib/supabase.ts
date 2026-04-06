@@ -10,7 +10,29 @@ export type Expense = {
   user_id: string
   description: string
   amount: number
-  currency: 'ARS' | 'USD'
-  month: string // format: YYYY-MM
+  currency: 'UYU' | 'USD'
+  bank: string | null
+  month: string        // YYYY-MM
+  expense_date: string // YYYY-MM-DD
   created_at: string
+}
+
+export const BANKS = ['Itaú', 'Scotiabank', 'BROU'] as const
+export type Bank = typeof BANKS[number]
+
+export type SharedAccess = {
+  id: string
+  owner_id: string
+  owner_email: string
+  shared_with_id: string | null
+  shared_with_email: string | null
+  invite_code: string
+  status: 'pending' | 'accepted'
+  created_at: string
+}
+
+export type Account = {
+  user_id: string
+  email: string
+  isOwn: boolean
 }

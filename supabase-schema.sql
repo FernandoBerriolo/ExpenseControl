@@ -9,10 +9,12 @@ CREATE TABLE IF NOT EXISTS expenses (
   user_id    UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   description TEXT NOT NULL,
   amount     DECIMAL(12, 2) NOT NULL CHECK (amount > 0),
-  currency   TEXT NOT NULL CHECK (currency IN ('ARS', 'USD')),
-  month      TEXT NOT NULL, -- Formato: YYYY-MM (ej: 2024-03)
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  currency   TEXT NOT NULL CHECK (currency IN ('UYU', 'USD')),
+  bank       TEXT CHECK (bank IN ('Itaú', 'Scotiabank', 'BROU')),
+  month         TEXT NOT NULL, -- Formato: YYYY-MM (ej: 2024-03)
+  expense_date  DATE,          -- Fecha específica del gasto
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Índice para acelerar las búsquedas por usuario y mes

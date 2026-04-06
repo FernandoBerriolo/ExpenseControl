@@ -32,7 +32,7 @@ export default function RegisterPage() {
     const { error } = await supabase.auth.signUp({ email, password })
 
     if (error) {
-      setError(error.message === 'User already registered' ? 'Ya existe una cuenta con ese email' : 'Error al registrarse. Intentá de nuevo.')
+      setError(error.message || 'Error al registrarse. Intentá de nuevo.')
       setLoading(false)
     } else {
       // Try to sign in directly
