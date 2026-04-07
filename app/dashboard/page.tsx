@@ -2,27 +2,25 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase, type Expense, type SharedAccess, type Account, BANKS } from '@/lib/supabase'
+import { supabase, type Expense, type Income, type SharedAccess, type Account, BANKS, CATEGORIES } from '@/lib/supabase'
 
 const MONTHS = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
 ]
 
-// Días de cierre por tarjeta
 const CARD_CLOSING_DAYS: Record<string, number> = {
   'Itaú': 26,
   'Scotiabank': 1,
   'BROU': 25,
 }
 
-// Calcula el mes de cobro real según la tarjeta y la fecha de compra
 function getBillingMonth(purchaseDateStr: string, bank: string): string {
   const closingDay = CARD_CLOSING_DAYS[bank]
   if (!closingDay) return purchaseDateStr.substring(0, 7)
   const [year, month, day] = purchaseDateStr.split('-').map(Number)
   if (day > closingDay) {
-    const d = new Date(year, month, 1) // month es 1-based, new Date lo trata 0-based → siguiente mes
+    const d = new Date(year, month, 1)
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
   }
   return `${year}-${String(month).padStart(2, '0')}`
@@ -96,6 +94,11 @@ function generateCode() {
   return Math.random().toString(36).substring(2, 10).toUpperCase()
 }
 
+function getCategoryInfo(value: string | null | undefined) {
+  if (!value) return null
+  return CATEGORIES.find(c => c.value === value) ?? null
+}
+
 type ModalMode = 'add' | 'edit' | null
 
 export default function Dashboard() {
@@ -113,6 +116,16 @@ export default function Dashboard() {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
+  // Income state
+  const [incomes, setIncomes] = useState<Income[]>([])
+  const [showIncomeModal, setShowIncomeModal] = useState(false)
+  const [incomeDesc, setIncomeDesc] = useState('Sueldo')
+  const [incomeAmount, setIncomeAmount] = useState('')
+  const [incomeCurrency, setIncomeCurrency] = useState<'UYU' | 'USD'>('UYU')
+  const [incomeFormLoading, setIncomeFormLoading] = useState(false)
+  const [incomeError, setIncomeError] = useState('')
+  const [deleteIncomeConfirm, setDeleteIncomeConfirm] = useState<string | null>(null)
+
   // Share modal
   const [showShare, setShowShare] = useState(false)
   const [shareTab, setShareTab] = useState<'mycode' | 'join'>('mycode')
@@ -123,17 +136,19 @@ export default function Dashboard() {
   const [joinSuccess, setJoinSuccess] = useState('')
   const [codeCopied, setCodeCopied] = useState(false)
 
-  // Form state
+  // Expense form state
   const [formDesc, setFormDesc] = useState('')
   const [formAmount, setFormAmount] = useState('')
   const [formCurrency, setFormCurrency] = useState<'UYU' | 'USD'>('UYU')
   const [formBank, setFormBank] = useState('')
   const [formDate, setFormDate] = useState(getDefaultDateForMonth(getCurrentMonth()))
   const [formInstallments, setFormInstallments] = useState(1)
+  const [formCategory, setFormCategory] = useState('')
+  const [formSubcategory, setFormSubcategory] = useState('')
+  const [formIsOwed, setFormIsOwed] = useState(false)
   const [formLoading, setFormLoading] = useState(false)
   const [formError, setFormError] = useState('')
 
-  // Computed: mes de cobro real
   const billingMonth = useMemo(() => {
     if (!formDate) return selectedMonth
     if (formBank && CARD_CLOSING_DAYS[formBank]) {
@@ -144,7 +159,6 @@ export default function Dashboard() {
 
   const billingDiffersFromDate = billingMonth !== formDate.substring(0, 7)
 
-  // Check auth and load accounts
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) { router.replace('/login'); return }
@@ -195,6 +209,20 @@ export default function Dashboard() {
 
   useEffect(() => { loadExpenses() }, [loadExpenses])
 
+  const loadIncomes = useCallback(async () => {
+    if (!activeAccount) return
+    const { data, error } = await supabase
+      .from('incomes')
+      .select('*')
+      .eq('user_id', activeAccount.user_id)
+      .eq('month', selectedMonth)
+      .order('created_at', { ascending: false })
+
+    if (!error && data) setIncomes(data as Income[])
+  }, [selectedMonth, activeAccount])
+
+  useEffect(() => { loadIncomes() }, [loadIncomes])
+
   // --- Share ---
   async function handleGenerateCode() {
     const code = generateCode()
@@ -233,6 +261,41 @@ export default function Dashboard() {
     setJoinLoading(false)
   }
 
+  // --- Income ---
+  async function handleAddIncome(e: React.SyntheticEvent) {
+    e.preventDefault()
+    setIncomeError('')
+    const amount = parseFloat(incomeAmount)
+    if (isNaN(amount) || amount <= 0) { setIncomeError('El monto debe ser mayor a 0'); return }
+    if (!incomeDesc.trim()) { setIncomeError('La descripción no puede estar vacía'); return }
+    if (!activeAccount) return
+    setIncomeFormLoading(true)
+    const { error } = await supabase.from('incomes').insert({
+      user_id: activeAccount.user_id,
+      description: incomeDesc.trim(),
+      amount,
+      currency: incomeCurrency,
+      month: selectedMonth,
+      income_date: `${selectedMonth}-01`,
+    })
+    if (error) {
+      setIncomeError('Error al guardar. Intentá de nuevo.')
+    } else {
+      setShowIncomeModal(false)
+      setIncomeAmount('')
+      setIncomeDesc('Sueldo')
+      setIncomeCurrency('UYU')
+      loadIncomes()
+    }
+    setIncomeFormLoading(false)
+  }
+
+  async function handleDeleteIncome(id: string) {
+    await supabase.from('incomes').delete().eq('id', id)
+    setDeleteIncomeConfirm(null)
+    loadIncomes()
+  }
+
   // --- Expense form ---
   function openAddModal() {
     setFormDesc('')
@@ -241,6 +304,9 @@ export default function Dashboard() {
     setFormBank('')
     setFormDate(getDefaultDateForMonth(selectedMonth))
     setFormInstallments(1)
+    setFormCategory('')
+    setFormSubcategory('')
+    setFormIsOwed(false)
     setFormError('')
     setEditingExpense(null)
     setModalMode('add')
@@ -253,6 +319,9 @@ export default function Dashboard() {
     setFormBank(expense.bank ?? '')
     setFormDate(expense.expense_date ?? getDefaultDateForMonth(selectedMonth))
     setFormInstallments(1)
+    setFormCategory(expense.category ?? '')
+    setFormSubcategory(expense.subcategory ?? '')
+    setFormIsOwed(expense.is_owed ?? false)
     setFormError('')
     setEditingExpense(expense)
     setModalMode('edit')
@@ -287,6 +356,9 @@ export default function Dashboard() {
         bank: formBank || null,
         month: addMonths(billingMonth, i),
         expense_date: formDate,
+        category: formCategory || null,
+        subcategory: formSubcategory.trim() || null,
+        is_owed: formIsOwed,
       }))
 
       const { error } = await supabase.from('expenses').insert(entries)
@@ -301,6 +373,9 @@ export default function Dashboard() {
         bank: formBank || null,
         month: billingMonth,
         expense_date: formDate,
+        category: formCategory || null,
+        subcategory: formSubcategory.trim() || null,
+        is_owed: formIsOwed,
       }).eq('id', editingExpense.id)
 
       if (error) setFormError('Error al actualizar. Intentá de nuevo.')
@@ -323,9 +398,36 @@ export default function Dashboard() {
 
   const totalUYU = expenses.filter(e => e.currency === 'UYU').reduce((s, e) => s + e.amount, 0)
   const totalUSD = expenses.filter(e => e.currency === 'USD').reduce((s, e) => s + e.amount, 0)
+  const incomeTotalUYU = incomes.filter(i => i.currency === 'UYU').reduce((s, i) => s + i.amount, 0)
+  const incomeTotalUSD = incomes.filter(i => i.currency === 'USD').reduce((s, i) => s + i.amount, 0)
   const viewingShared = activeAccount && !activeAccount.isOwn
 
-  // Date bounds for the picker
+  // Category chart data
+  const categoryData = useMemo(() => {
+    const groups: Record<string, { uyu: number; usd: number }> = {}
+    for (const e of expenses) {
+      const key = e.category || '__sin__'
+      if (!groups[key]) groups[key] = { uyu: 0, usd: 0 }
+      if (e.currency === 'UYU') groups[key].uyu += e.amount
+      else groups[key].usd += e.amount
+    }
+    return Object.entries(groups)
+      .map(([cat, totals]) => {
+        const info = getCategoryInfo(cat)
+        return {
+          cat,
+          uyu: totals.uyu,
+          usd: totals.usd,
+          label: info?.label ?? 'Sin categoría',
+          emoji: info?.emoji ?? '📦',
+        }
+      })
+      .sort((a, b) => b.uyu - a.uyu)
+  }, [expenses])
+
+  const maxUYU = Math.max(...categoryData.map(d => d.uyu), 1)
+  const maxUSD = Math.max(...categoryData.map(d => d.usd), 1)
+
   const dateMin = `${selectedMonth}-01`
   const dateMax = lastDayOfMonth(selectedMonth)
 
@@ -395,6 +497,61 @@ export default function Dashboard() {
             className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-600 text-xl">›</button>
         </div>
 
+        {/* Income Section */}
+        <div className="bg-white rounded-2xl shadow-sm p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-semibold text-gray-700">💼 Ingresos del mes</p>
+            {!viewingShared && (
+              <button
+                onClick={() => { setShowIncomeModal(true); setIncomeError('') }}
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-lg font-bold"
+                style={{ background: 'linear-gradient(135deg, #667eea, #764ba2)' }}
+              >+</button>
+            )}
+          </div>
+
+          {incomes.length === 0 ? (
+            <p className="text-sm text-gray-400">Sin ingresos registrados este mes</p>
+          ) : (
+            <div className="space-y-2">
+              {incomes.map(income => (
+                <div key={income.id} className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-gray-700">{income.description}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-bold text-green-600">{formatMoney(income.amount, income.currency)}</p>
+                    {!viewingShared && (
+                      <button onClick={() => setDeleteIncomeConfirm(income.id)}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-sm">🗑️</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Balance */}
+          {(incomeTotalUYU > 0 || incomeTotalUSD > 0) && (
+            <div className="mt-3 pt-3 border-t border-gray-100 space-y-1.5">
+              {incomeTotalUYU > 0 && totalUYU > 0 && (
+                <div className="flex justify-between items-center">
+                  <p className="text-xs text-gray-500">Balance Pesos</p>
+                  <p className={`text-sm font-bold ${incomeTotalUYU - totalUYU >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                    {incomeTotalUYU - totalUYU >= 0 ? '+' : ''}{formatMoney(incomeTotalUYU - totalUYU, 'UYU')}
+                  </p>
+                </div>
+              )}
+              {incomeTotalUSD > 0 && totalUSD > 0 && (
+                <div className="flex justify-between items-center">
+                  <p className="text-xs text-gray-500">Balance Dólares</p>
+                  <p className={`text-sm font-bold ${incomeTotalUSD - totalUSD >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                    {incomeTotalUSD - totalUSD >= 0 ? '+' : ''}{formatMoney(incomeTotalUSD - totalUSD, 'USD')}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Totals */}
         {expenses.length > 0 && (
           <div className={`grid gap-3 ${totalUYU > 0 && totalUSD > 0 ? 'grid-cols-2' : 'grid-cols-1'}`}>
@@ -417,6 +574,67 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* Category Chart */}
+        {expenses.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm p-4">
+            <p className="text-sm font-semibold text-gray-700 mb-4">📊 Gastos por categoría</p>
+
+            {totalUYU > 0 && (
+              <div className="space-y-3">
+                {categoryData.filter(d => d.uyu > 0).map(d => (
+                  <div key={`uyu-${d.cat}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-base">{d.emoji}</span>
+                        <span className="text-xs font-medium text-gray-600">{d.label}</span>
+                      </div>
+                      <span className="text-xs font-bold" style={{ color: '#667eea' }}>
+                        {formatMoney(d.uyu, 'UYU')}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2">
+                      <div className="h-2 rounded-full transition-all"
+                        style={{
+                          width: `${(d.uyu / maxUYU) * 100}%`,
+                          background: 'linear-gradient(135deg, #667eea, #764ba2)'
+                        }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {totalUSD > 0 && (
+              <>
+                {totalUYU > 0 && <div className="my-4 border-t border-gray-100" />}
+                <p className="text-xs text-gray-400 font-medium mb-3">En dólares</p>
+                <div className="space-y-3">
+                  {categoryData.filter(d => d.usd > 0).map(d => (
+                    <div key={`usd-${d.cat}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-base">{d.emoji}</span>
+                          <span className="text-xs font-medium text-gray-600">{d.label}</span>
+                        </div>
+                        <span className="text-xs font-bold" style={{ color: '#764ba2' }}>
+                          {formatMoney(d.usd, 'USD')}
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-100 rounded-full h-2">
+                        <div className="h-2 rounded-full transition-all"
+                          style={{
+                            width: `${(d.usd / maxUSD) * 100}%`,
+                            background: 'linear-gradient(135deg, #764ba2, #a855f7)'
+                          }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Expenses list */}
         <div className="space-y-3">
           {loading ? (
@@ -430,39 +648,57 @@ export default function Dashboard() {
               <p className="text-gray-400 text-sm mt-1">Tocá + para agregar uno</p>
             </div>
           ) : (
-            expenses.map(expense => (
-              <div key={expense.id} className="bg-white rounded-2xl shadow-sm p-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: expense.currency === 'USD' ? '#f3e8ff' : '#e8edff' }}>
-                  <span className="text-lg">{expense.currency === 'USD' ? '💵' : '💰'}</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-800 truncate">{expense.description}</p>
-                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                    <p className="text-xs text-gray-400">
-                      {expense.expense_date ? formatDate(expense.expense_date) : ''}
+            expenses.map(expense => {
+              const catInfo = getCategoryInfo(expense.category)
+              return (
+                <div key={expense.id} className="bg-white rounded-2xl shadow-sm p-4 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: expense.currency === 'USD' ? '#f3e8ff' : '#e8edff' }}>
+                    <span className="text-lg">{catInfo ? catInfo.emoji : (expense.currency === 'USD' ? '💵' : '💰')}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-800 truncate">{expense.description}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                      <p className="text-xs text-gray-400">
+                        {expense.expense_date ? formatDate(expense.expense_date) : ''}
+                      </p>
+                      {expense.bank && (
+                        <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
+                          style={{ background: '#f0f2ff', color: '#667eea' }}>
+                          {expense.bank}
+                        </span>
+                      )}
+                      {catInfo && (
+                        <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
+                          style={{ background: '#f5f3ff', color: '#7c3aed' }}>
+                          {catInfo.label}
+                        </span>
+                      )}
+                      {expense.subcategory && (
+                        <span className="text-xs text-gray-400 truncate max-w-[100px]">{expense.subcategory}</span>
+                      )}
+                      {expense.is_owed && (
+                        <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
+                          style={{ background: '#fff7ed', color: '#c2410c' }}>
+                          💸 Debes a Fer
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <p className="font-bold text-base" style={{ color: expense.currency === 'USD' ? '#764ba2' : '#667eea' }}>
+                      {formatMoney(expense.amount, expense.currency)}
                     </p>
-                    {expense.bank && (
-                      <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
-                        style={{ background: '#f0f2ff', color: '#667eea' }}>
-                        {expense.bank}
-                      </span>
-                    )}
+                    <div className="flex gap-1">
+                      <button onClick={() => openEditModal(expense)}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100">✏️</button>
+                      <button onClick={() => setDeleteConfirm(expense.id)}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50">🗑️</button>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <p className="font-bold text-base" style={{ color: expense.currency === 'USD' ? '#764ba2' : '#667eea' }}>
-                    {formatMoney(expense.amount, expense.currency)}
-                  </p>
-                  <div className="flex gap-1">
-                    <button onClick={() => openEditModal(expense)}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100">✏️</button>
-                    <button onClick={() => setDeleteConfirm(expense.id)}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50">🗑️</button>
-                  </div>
-                </div>
-              </div>
-            ))
+              )
+            })
           )}
         </div>
       </div>
@@ -474,7 +710,7 @@ export default function Dashboard() {
         style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
       >+</button>
 
-      {/* Add / Edit Modal */}
+      {/* Add / Edit Expense Modal */}
       {modalMode && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-4 pb-4 sm:pb-0"
           style={{ background: 'rgba(0,0,0,0.5)' }}
@@ -504,7 +740,53 @@ export default function Dashboard() {
                 />
               </div>
 
-              {/* Fecha — restringida al mes seleccionado */}
+              {/* Categoría */}
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-2">Categoría</label>
+                <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                  <button
+                    type="button"
+                    onClick={() => setFormCategory('')}
+                    className="flex-shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded-xl border-2 transition-all"
+                    style={!formCategory
+                      ? { borderColor: '#667eea', background: '#e8edff' }
+                      : { borderColor: '#e5e7eb', background: 'white' }}>
+                    <span className="text-lg">—</span>
+                    <span className="text-xs font-medium" style={{ color: !formCategory ? '#667eea' : '#9ca3af' }}>Ninguna</span>
+                  </button>
+                  {CATEGORIES.map(cat => (
+                    <button
+                      key={cat.value}
+                      type="button"
+                      onClick={() => setFormCategory(cat.value)}
+                      className="flex-shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded-xl border-2 transition-all"
+                      style={formCategory === cat.value
+                        ? { borderColor: '#667eea', background: '#e8edff' }
+                        : { borderColor: '#e5e7eb', background: 'white' }}>
+                      <span className="text-lg">{cat.emoji}</span>
+                      <span className="text-xs font-medium" style={{ color: formCategory === cat.value ? '#667eea' : '#9ca3af' }}>
+                        {cat.label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Subcategoría */}
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1.5">
+                  Subcategoría <span className="text-gray-400 font-normal">(opcional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={formSubcategory}
+                  onChange={e => setFormSubcategory(e.target.value)}
+                  placeholder="Ej: Sushi, Supermercado, YPF..."
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 text-gray-800 placeholder-gray-400"
+                />
+              </div>
+
+              {/* Fecha */}
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1.5">Fecha de compra</label>
                 <div className="relative">
@@ -556,7 +838,6 @@ export default function Dashboard() {
                   <option value="">Otros</option>
                   {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
                 </select>
-                {/* Fecha de cierre info */}
                 {formBank && CARD_CLOSING_DAYS[formBank] && (
                   <p className="text-xs text-gray-400 mt-1.5 ml-1">
                     Cierre: día {CARD_CLOSING_DAYS[formBank]} de cada mes
@@ -564,7 +845,7 @@ export default function Dashboard() {
                 )}
               </div>
 
-              {/* Aviso de mes de cobro si difiere */}
+              {/* Aviso mes de cobro */}
               {billingDiffersFromDate && (
                 <div className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-sm"
                   style={{ background: '#fff7e6', border: '1px solid #fde68a', color: '#92400e' }}>
@@ -573,7 +854,7 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* Cuotas — solo si hay tarjeta y es modo agregar */}
+              {/* Cuotas */}
               {formBank && modalMode === 'add' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-600 mb-1.5">Cuotas</label>
@@ -617,6 +898,27 @@ export default function Dashboard() {
                 />
               </div>
 
+              {/* Debes a Fer */}
+              <button
+                type="button"
+                onClick={() => setFormIsOwed(prev => !prev)}
+                className="w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all"
+                style={formIsOwed
+                  ? { borderColor: '#f97316', background: '#fff7ed' }
+                  : { borderColor: '#e5e7eb', background: 'white' }}>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">💸</span>
+                  <span className="text-sm font-medium" style={{ color: formIsOwed ? '#c2410c' : '#6b7280' }}>
+                    Debes a Fer
+                  </span>
+                </div>
+                <div className="w-10 h-6 rounded-full transition-all relative"
+                  style={{ background: formIsOwed ? '#f97316' : '#e5e7eb' }}>
+                  <div className="w-4 h-4 bg-white rounded-full absolute top-1 transition-all shadow-sm"
+                    style={{ left: formIsOwed ? '22px' : '2px' }} />
+                </div>
+              </button>
+
               {formError && (
                 <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl">
                   {formError}
@@ -646,7 +948,97 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Delete Confirm */}
+      {/* Add Income Modal */}
+      {showIncomeModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-4 pb-4 sm:pb-0"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowIncomeModal(false) }}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-xl font-bold text-gray-800">Agregar ingreso</h2>
+              <button onClick={() => setShowIncomeModal(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400">✕</button>
+            </div>
+
+            <form onSubmit={handleAddIncome} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1.5">Descripción</label>
+                <input
+                  type="text"
+                  value={incomeDesc}
+                  onChange={e => setIncomeDesc(e.target.value)}
+                  required
+                  placeholder="Ej: Sueldo, Freelance..."
+                  autoFocus
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 text-gray-800 placeholder-gray-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1.5">Moneda</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setIncomeCurrency('UYU')}
+                    className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
+                    style={incomeCurrency === 'UYU'
+                      ? { borderColor: '#667eea', background: '#e8edff', color: '#667eea' }
+                      : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
+                    💰 Pesos
+                  </button>
+                  <button type="button" onClick={() => setIncomeCurrency('USD')}
+                    className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
+                    style={incomeCurrency === 'USD'
+                      ? { borderColor: '#764ba2', background: '#f3e8ff', color: '#764ba2' }
+                      : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
+                    💵 Dólares
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1.5">
+                  Monto ({incomeCurrency === 'UYU' ? '$' : 'USD'})
+                </label>
+                <input
+                  type="number"
+                  value={incomeAmount}
+                  onChange={e => setIncomeAmount(e.target.value)}
+                  required
+                  min="0.01"
+                  step="0.01"
+                  placeholder="0.00"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 text-gray-800 placeholder-gray-400 text-lg font-semibold"
+                />
+              </div>
+
+              {incomeError && (
+                <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl">
+                  {incomeError}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowIncomeModal(false)}
+                  className="flex-1 py-3 rounded-xl font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50">
+                  Cancelar
+                </button>
+                <button type="submit" disabled={incomeFormLoading}
+                  className="flex-1 py-3 rounded-xl font-semibold text-white active:scale-95 disabled:opacity-70"
+                  style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
+                  {incomeFormLoading
+                    ? <span className="flex items-center justify-center gap-2">
+                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Guardando...
+                      </span>
+                    : 'Agregar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Expense Confirm */}
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
           style={{ background: 'rgba(0,0,0,0.5)' }}
@@ -662,6 +1054,30 @@ export default function Dashboard() {
                 Cancelar
               </button>
               <button onClick={() => handleDelete(deleteConfirm)}
+                className="flex-1 py-3 rounded-xl font-semibold text-white bg-red-500 hover:bg-red-600">
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Income Confirm */}
+      {deleteIncomeConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setDeleteIncomeConfirm(null)}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xs p-6 text-center"
+            onClick={e => e.stopPropagation()}>
+            <div className="text-4xl mb-3">🗑️</div>
+            <h3 className="text-lg font-bold text-gray-800 mb-2">¿Eliminar ingreso?</h3>
+            <p className="text-gray-500 text-sm mb-5">Esta acción no se puede deshacer.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteIncomeConfirm(null)}
+                className="flex-1 py-3 rounded-xl font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50">
+                Cancelar
+              </button>
+              <button onClick={() => handleDeleteIncome(deleteIncomeConfirm)}
                 className="flex-1 py-3 rounded-xl font-semibold text-white bg-red-500 hover:bg-red-600">
                 Eliminar
               </button>
