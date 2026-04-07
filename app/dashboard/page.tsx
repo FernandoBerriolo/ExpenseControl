@@ -11,7 +11,6 @@ const MONTHS = [
 
 const CARD_CLOSING_DAYS: Record<string, number> = {
   'Itaú': 26,
-  'Scotiabank': 1,
   'BROU': 25,
 }
 
@@ -128,7 +127,11 @@ export default function Dashboard() {
 
   // Share modal
   const [showShare, setShowShare] = useState(false)
-  const [shareTab, setShareTab] = useState<'mycode' | 'join'>('mycode')
+  const [shareTab, setShareTab] = useState<'mycode' | 'join' | 'telegram'>('mycode')
+  const [myPhone, setMyPhone] = useState('')
+  const [phoneInput, setPhoneInput] = useState('')
+  const [phoneLoading, setPhoneLoading] = useState(false)
+  const [phoneSaved, setPhoneSaved] = useState(false)
   const [myInviteCode, setMyInviteCode] = useState('')
   const [joinCode, setJoinCode] = useState('')
   const [joinLoading, setJoinLoading] = useState(false)
@@ -189,6 +192,14 @@ export default function Dashboard() {
         .single()
 
       if (codeData) setMyInviteCode(codeData.invite_code)
+
+      const { data: phoneData } = await supabase
+        .from('phone_users')
+        .select('phone')
+        .eq('user_id', uid)
+        .single()
+
+      if (phoneData) { setMyPhone(phoneData.phone); setPhoneInput(phoneData.phone) }
     })
   }, [router])
 
@@ -278,6 +289,19 @@ export default function Dashboard() {
       setJoinCode('')
     }
     setJoinLoading(false)
+  }
+
+  async function handleSavePhone() {
+    if (!phoneInput.trim()) return
+    setPhoneLoading(true)
+    setPhoneSaved(false)
+    const phone = phoneInput.trim().replace(/\D/g, '') // solo dígitos
+    const { error } = await supabase.from('phone_users').upsert(
+      { phone, user_id: myUserId },
+      { onConflict: 'phone' }
+    )
+    if (!error) { setMyPhone(phone); setPhoneSaved(true); setTimeout(() => setPhoneSaved(false), 3000) }
+    setPhoneLoading(false)
   }
 
   // --- Income ---
@@ -1117,18 +1141,25 @@ export default function Dashboard() {
 
             <div className="flex rounded-xl overflow-hidden border border-gray-200 mb-5">
               <button onClick={() => setShareTab('mycode')}
-                className="flex-1 py-2.5 text-sm font-semibold"
+                className="flex-1 py-2.5 text-xs font-semibold"
                 style={shareTab === 'mycode'
                   ? { background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }
                   : { background: 'white', color: '#6b7280' }}>
                 Mi código
               </button>
               <button onClick={() => setShareTab('join')}
-                className="flex-1 py-2.5 text-sm font-semibold"
+                className="flex-1 py-2.5 text-xs font-semibold"
                 style={shareTab === 'join'
                   ? { background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }
                   : { background: 'white', color: '#6b7280' }}>
                 Unirme
+              </button>
+              <button onClick={() => setShareTab('telegram')}
+                className="flex-1 py-2.5 text-xs font-semibold"
+                style={shareTab === 'telegram'
+                  ? { background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }
+                  : { background: 'white', color: '#6b7280' }}>
+                ✈️ Telegram
               </button>
             </div>
 
@@ -1192,6 +1223,48 @@ export default function Dashboard() {
                         Uniéndome...
                       </span>
                     : 'Unirme'}
+                </button>
+              </div>
+            )}
+
+            {shareTab === 'telegram' && (
+              <div className="space-y-4">
+                <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af' }}>
+                  <p className="font-semibold mb-1.5">Cómo vincular tu cuenta:</p>
+                  <p>1. Abrí Telegram y buscá tu bot</p>
+                  <p>2. Mandále <span className="font-mono font-bold">/start</span></p>
+                  <p>3. El bot te responde con tu ID — pegalo abajo</p>
+                </div>
+                <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534' }}>
+                  <p className="font-semibold">Formato para agregar gastos:</p>
+                  <p className="font-mono">Compra helado por 150 con itau</p>
+                  <p className="font-mono">Pizza por 350</p>
+                  <p className="font-mono">Uber por 80 con brou</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1.5">Tu ID de Telegram</label>
+                  <input
+                    type="text"
+                    value={phoneInput}
+                    onChange={e => setPhoneInput(e.target.value)}
+                    placeholder="Ej: 987654321"
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 text-gray-800 placeholder-gray-400 font-mono text-lg tracking-wider"
+                  />
+                </div>
+                {phoneSaved && (
+                  <div className="bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-3 rounded-xl">
+                    ✓ ID guardado correctamente
+                  </div>
+                )}
+                <button onClick={handleSavePhone} disabled={phoneLoading || !phoneInput.trim()}
+                  className="w-full py-3 rounded-xl font-semibold text-white disabled:opacity-50"
+                  style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+                  {phoneLoading
+                    ? <span className="flex items-center justify-center gap-2">
+                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Guardando...
+                      </span>
+                    : 'Guardar ID'}
                 </button>
               </div>
             )}
