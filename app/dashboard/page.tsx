@@ -144,7 +144,6 @@ export default function Dashboard() {
   const [formDate, setFormDate] = useState(getDefaultDateForMonth(getCurrentMonth()))
   const [formInstallments, setFormInstallments] = useState(1)
   const [formCategory, setFormCategory] = useState('')
-  const [formSubcategory, setFormSubcategory] = useState('')
   const [formIsOwed, setFormIsOwed] = useState(false)
   const [formLoading, setFormLoading] = useState(false)
   const [formError, setFormError] = useState('')
@@ -222,6 +221,26 @@ export default function Dashboard() {
   }, [selectedMonth, activeAccount])
 
   useEffect(() => { loadIncomes() }, [loadIncomes])
+
+  const [owedTotalUYU, setOwedTotalUYU] = useState(0)
+  const [owedTotalUSD, setOwedTotalUSD] = useState(0)
+
+  const loadOwedTotal = useCallback(async () => {
+    if (!activeAccount) return
+    const { data } = await supabase
+      .from('expenses')
+      .select('amount, currency')
+      .eq('user_id', activeAccount.user_id)
+      .eq('month', selectedMonth)
+      .eq('is_owed', true)
+    if (data) {
+      const rows = data as { amount: number; currency: string }[]
+      setOwedTotalUYU(rows.filter(e => e.currency === 'UYU').reduce((s, e) => s + e.amount, 0))
+      setOwedTotalUSD(rows.filter(e => e.currency === 'USD').reduce((s, e) => s + e.amount, 0))
+    }
+  }, [activeAccount, selectedMonth])
+
+  useEffect(() => { loadOwedTotal() }, [loadOwedTotal])
 
   // --- Share ---
   async function handleGenerateCode() {
@@ -305,7 +324,6 @@ export default function Dashboard() {
     setFormDate(getDefaultDateForMonth(selectedMonth))
     setFormInstallments(1)
     setFormCategory('')
-    setFormSubcategory('')
     setFormIsOwed(false)
     setFormError('')
     setEditingExpense(null)
@@ -320,7 +338,6 @@ export default function Dashboard() {
     setFormDate(expense.expense_date ?? getDefaultDateForMonth(selectedMonth))
     setFormInstallments(1)
     setFormCategory(expense.category ?? '')
-    setFormSubcategory(expense.subcategory ?? '')
     setFormIsOwed(expense.is_owed ?? false)
     setFormError('')
     setEditingExpense(expense)
@@ -357,13 +374,12 @@ export default function Dashboard() {
         month: addMonths(billingMonth, i),
         expense_date: formDate,
         category: formCategory || null,
-        subcategory: formSubcategory.trim() || null,
         is_owed: formIsOwed,
       }))
 
       const { error } = await supabase.from('expenses').insert(entries)
       if (error) setFormError('Error al guardar. Intentá de nuevo.')
-      else { closeModal(); loadExpenses() }
+      else { closeModal(); loadExpenses(); loadOwedTotal() }
 
     } else if (modalMode === 'edit' && editingExpense) {
       const { error } = await supabase.from('expenses').update({
@@ -374,12 +390,11 @@ export default function Dashboard() {
         month: billingMonth,
         expense_date: formDate,
         category: formCategory || null,
-        subcategory: formSubcategory.trim() || null,
         is_owed: formIsOwed,
       }).eq('id', editingExpense.id)
 
       if (error) setFormError('Error al actualizar. Intentá de nuevo.')
-      else { closeModal(); loadExpenses() }
+      else { closeModal(); loadExpenses(); loadOwedTotal() }
     }
 
     setFormLoading(false)
@@ -389,6 +404,7 @@ export default function Dashboard() {
     await supabase.from('expenses').delete().eq('id', id)
     setDeleteConfirm(null)
     loadExpenses()
+    loadOwedTotal()
   }
 
   async function handleLogout() {
@@ -398,6 +414,9 @@ export default function Dashboard() {
 
   const totalUYU = expenses.filter(e => e.currency === 'UYU').reduce((s, e) => s + e.amount, 0)
   const totalUSD = expenses.filter(e => e.currency === 'USD').reduce((s, e) => s + e.amount, 0)
+  // Balance only counts "Otros" (cash) expenses, not card expenses
+  const cardTotalUYU = expenses.filter(e => e.currency === 'UYU' && !e.bank).reduce((s, e) => s + e.amount, 0)
+  const cardTotalUSD = expenses.filter(e => e.currency === 'USD' && !e.bank).reduce((s, e) => s + e.amount, 0)
   const incomeTotalUYU = incomes.filter(i => i.currency === 'UYU').reduce((s, i) => s + i.amount, 0)
   const incomeTotalUSD = incomes.filter(i => i.currency === 'USD').reduce((s, i) => s + i.amount, 0)
   const viewingShared = activeAccount && !activeAccount.isOwn
@@ -529,22 +548,22 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* Balance */}
+          {/* Balance — solo tarjetas, no efectivo */}
           {(incomeTotalUYU > 0 || incomeTotalUSD > 0) && (
             <div className="mt-3 pt-3 border-t border-gray-100 space-y-1.5">
-              {incomeTotalUYU > 0 && totalUYU > 0 && (
+              {incomeTotalUYU > 0 && cardTotalUYU > 0 && (
                 <div className="flex justify-between items-center">
-                  <p className="text-xs text-gray-500">Balance Pesos</p>
-                  <p className={`text-sm font-bold ${incomeTotalUYU - totalUYU >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                    {incomeTotalUYU - totalUYU >= 0 ? '+' : ''}{formatMoney(incomeTotalUYU - totalUYU, 'UYU')}
+                  <p className="text-xs text-gray-500">Balance Pesos <span className="text-gray-400">(solo tarjetas)</span></p>
+                  <p className={`text-sm font-bold ${incomeTotalUYU - cardTotalUYU >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                    {incomeTotalUYU - cardTotalUYU >= 0 ? '+' : ''}{formatMoney(incomeTotalUYU - cardTotalUYU, 'UYU')}
                   </p>
                 </div>
               )}
-              {incomeTotalUSD > 0 && totalUSD > 0 && (
+              {incomeTotalUSD > 0 && cardTotalUSD > 0 && (
                 <div className="flex justify-between items-center">
-                  <p className="text-xs text-gray-500">Balance Dólares</p>
-                  <p className={`text-sm font-bold ${incomeTotalUSD - totalUSD >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                    {incomeTotalUSD - totalUSD >= 0 ? '+' : ''}{formatMoney(incomeTotalUSD - totalUSD, 'USD')}
+                  <p className="text-xs text-gray-500">Balance Dólares <span className="text-gray-400">(solo tarjetas)</span></p>
+                  <p className={`text-sm font-bold ${incomeTotalUSD - cardTotalUSD >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                    {incomeTotalUSD - cardTotalUSD >= 0 ? '+' : ''}{formatMoney(incomeTotalUSD - cardTotalUSD, 'USD')}
                   </p>
                 </div>
               )}
@@ -571,6 +590,21 @@ export default function Dashboard() {
                 </p>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Debes a Fer — total histórico */}
+        {(owedTotalUYU > 0 || owedTotalUSD > 0) && (
+          <div className="rounded-2xl p-4" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
+            <p className="text-sm font-semibold mb-2" style={{ color: '#c2410c' }}>💸 Debés a Fer este mes</p>
+            <div className="flex flex-wrap gap-3">
+              {owedTotalUYU > 0 && (
+                <p className="text-lg font-bold" style={{ color: '#ea580c' }}>{formatMoney(owedTotalUYU, 'UYU')}</p>
+              )}
+              {owedTotalUSD > 0 && (
+                <p className="text-lg font-bold" style={{ color: '#9a3412' }}>{formatMoney(owedTotalUSD, 'USD')}</p>
+              )}
+            </div>
           </div>
         )}
 
@@ -674,9 +708,6 @@ export default function Dashboard() {
                           {catInfo.label}
                         </span>
                       )}
-                      {expense.subcategory && (
-                        <span className="text-xs text-gray-400 truncate max-w-[100px]">{expense.subcategory}</span>
-                      )}
                       {expense.is_owed && (
                         <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
                           style={{ background: '#fff7ed', color: '#c2410c' }}>
@@ -770,20 +801,6 @@ export default function Dashboard() {
                     </button>
                   ))}
                 </div>
-              </div>
-
-              {/* Subcategoría */}
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1.5">
-                  Subcategoría <span className="text-gray-400 font-normal">(opcional)</span>
-                </label>
-                <input
-                  type="text"
-                  value={formSubcategory}
-                  onChange={e => setFormSubcategory(e.target.value)}
-                  placeholder="Ej: Sushi, Supermercado, YPF..."
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 text-gray-800 placeholder-gray-400"
-                />
               </div>
 
               {/* Fecha */}
