@@ -128,13 +128,13 @@ Reglas:
 
   try {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0, responseMimeType: 'application/json' },
+          generationConfig: { temperature: 0 },
         }),
       }
     )
@@ -143,8 +143,11 @@ Reglas:
     const raw  = data.candidates?.[0]?.content?.parts?.[0]?.text
     if (!raw) return null
 
-    const parsed = JSON.parse(raw)
-    if (parsed.error || !parsed.amount || parsed.amount <= 0) return null
+    // Limpiar posibles code blocks de markdown
+    const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+
+    const parsed = JSON.parse(clean)
+    if (parsed.error || !parsed.amount || Number(parsed.amount) <= 0) return null
 
     return {
       description: parsed.description ?? text,
