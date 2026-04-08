@@ -327,51 +327,57 @@ async function parseWithAI(
   const monthStr = todayStr.slice(0, 7)
 
   const prompt = `Sos un asistente de gastos personales. Hoy es ${todayStr}.
-${text ? `Mensaje: "${text}"` : 'El mensaje es un audio de voz — transcribilo primero.'}
+${text ? `Mensaje de texto: "${text}"` : 'Hay un audio adjunto. Transcribilo completamente y luego extraé los gastos.'}
 
-Determiná si el mensaje es un GASTO (o varios gastos) a registrar, o una CONSULTA sobre gastos.
+Tu tarea: determinar si el mensaje contiene GASTOS a registrar o una CONSULTA sobre gastos.
 
-IMPORTANTE: "por [monto]" significa el precio. Ejemplos:
-- "me compré unas sandalias por 3000" → gasto de 3000
-- "compré una hamburguesa por 150" → gasto de 150
-- "pagué 500 por el super" → gasto de 500
-
-Si es un GASTO (uno o varios), respondé SIEMPRE con este formato:
+═══ GASTOS ═══
+Si hay uno o más gastos, respondé con este JSON (SIEMPRE con "items" como array):
 {
   "type": "expenses",
   "items": [
     {
-      "description": "nombre corto (2-4 palabras)",
-      "amount": número total (sin símbolos),
+      "description": "nombre corto del gasto (2-4 palabras)",
+      "amount": número (solo dígitos, sin símbolos),
       "bank": "Itaú" | "BROU" | "Scotiabank" | null,
       "category": "comida"|"nafta"|"ropa"|"hogar"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes" | null,
       "installments": número de cuotas o null,
-      "date": "YYYY-MM-DD" si mencionan fecha específica, o null
+      "date": "YYYY-MM-DD" solo si mencionan fecha distinta a hoy, si no null
     }
   ]
 }
 
-Si son varios gastos en un solo mensaje (ej: "hamburguesa por 100 y papas por 300"), incluí un item por cada gasto en el array.
+CRÍTICO — Ejemplos de extracción de monto:
+- "compré un helado por 150" → amount: 150
+- "me compré unas sandalias por 3000" → amount: 3000
+- "gasté 300 en la cena" → amount: 300
+- "pagué 500 por el super" → amount: 500
+- "me salió 200 la pizza" → amount: 200
 
-Si es una CONSULTA, respondé con este formato:
+CRÍTICO — Múltiples gastos: si el mensaje menciona más de un gasto, CADA UNO va como un item separado:
+- "compré un helado por 150 y en la cena gasté 300 que fue una milanesa" →
+  items: [{description:"Helado", amount:150, category:"comida"}, {description:"Milanesa al pan", amount:300, category:"comida"}]
+- "hamburguesa 100 y papas 50 con itau" →
+  items: [{description:"Hamburguesa", amount:100, bank:"Itaú"}, {description:"Papas", amount:50, bank:"Itaú"}]
+
+═══ CONSULTAS ═══
+Si es una pregunta sobre gastos, respondé con:
 {
   "type": "query",
   "query": "owed" | "category_total" | "monthly_total",
-  "category": categoría (solo para category_total, si no null),
+  "category": categoría (solo para category_total),
   "month": "YYYY-MM"
 }
-
-Tipos de consulta:
-- "owed": cuánto le debo a Fer / cuánto debo
+- "owed": cuánto le debo a Fer
 - "category_total": cuánto gasté en [categoría]
-- "monthly_total": cuánto gasté en total / resumen del mes
+- "monthly_total": cuánto gasté en total
 
-Reglas:
-- Si no hay monto claro en un gasto, respondé: {"error": "sin_monto"}
-- "itau"/"itaú" → "Itaú", "brou" → "BROU", "scotia" → "Scotiabank"
-- "este mes" → "${monthStr}", "el mes pasado" → mes anterior
-- Meses: enero=01, febrero=02, marzo=03, abril=04, mayo=05, junio=06, julio=07, agosto=08, septiembre=09, octubre=10, noviembre=11, diciembre=12
-- Respondé ÚNICAMENTE con JSON válido, sin texto adicional`
+═══ REGLAS ═══
+- Sin monto claro → {"error": "sin_monto"}
+- "itau"/"itaú" → "Itaú" | "brou" → "BROU" | "scotia" → "Scotiabank"
+- "este mes" → "${monthStr}" | "el mes pasado" → mes anterior
+- Meses: enero=01 feb=02 mar=03 abr=04 may=05 jun=06 jul=07 ago=08 sep=09 oct=10 nov=11 dic=12
+- Respondé ÚNICAMENTE con JSON válido, sin texto adicional, sin markdown`
 
   const parts: object[] = []
   if (audioBase64 && audioMime) {
@@ -412,22 +418,28 @@ Reglas:
       }
     }
 
-    if (parsed.type === 'expenses' && Array.isArray(parsed.items) && parsed.items.length > 0) {
-      const items: ExpenseItem[] = parsed.items
-        .filter((i: { amount?: unknown }) => i.amount && Number(i.amount) > 0)
-        .map((i: { description?: string; amount: unknown; bank?: string | null; category?: string | null; installments?: number | null; date?: string | null }) => ({
-          description:  i.description ?? 'Gasto',
-          amount:       Number(i.amount),
-          bank:         i.bank ?? null,
-          category:     i.category ?? null,
-          installments: i.installments ? Number(i.installments) : null,
-          date:         i.date ?? null,
-        }))
-      if (items.length === 0) return null
-      return { type: 'expenses', items }
+    // Normalizar: soportar tanto {type:"expenses", items:[...]} como {type:"expense", ...}
+    let rawItems: unknown[] = []
+    if (parsed.type === 'expenses' && Array.isArray(parsed.items)) {
+      rawItems = parsed.items
+    } else if (parsed.amount && Number(parsed.amount) > 0) {
+      // Gemini devolvió formato singular — envolverlo en array
+      rawItems = [parsed]
     }
 
-    return null
+    const items: ExpenseItem[] = (rawItems as { description?: string; amount?: unknown; bank?: string | null; category?: string | null; installments?: unknown; date?: string | null }[])
+      .filter(i => i.amount && Number(i.amount) > 0)
+      .map(i => ({
+        description:  i.description ?? 'Gasto',
+        amount:       Number(i.amount),
+        bank:         i.bank ?? null,
+        category:     i.category ?? null,
+        installments: i.installments ? Number(i.installments) : null,
+        date:         i.date ?? null,
+      }))
+
+    if (items.length === 0) return null
+    return { type: 'expenses', items }
   } catch (e) {
     console.error('[Gemini] error:', e)
     return null
