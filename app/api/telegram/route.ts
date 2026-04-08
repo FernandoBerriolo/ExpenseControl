@@ -140,11 +140,14 @@ Reglas:
     )
 
     const data = await res.json()
-    const raw  = data.candidates?.[0]?.content?.parts?.[0]?.text
+    console.log('[Gemini] status:', res.status)
+    console.log('[Gemini] response:', JSON.stringify(data))
+
+    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text
     if (!raw) return null
 
-    // Limpiar posibles code blocks de markdown
-    const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+    const clean  = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+    console.log('[Gemini] parsed text:', clean)
 
     const parsed = JSON.parse(clean)
     if (parsed.error || !parsed.amount || Number(parsed.amount) <= 0) return null
@@ -155,7 +158,8 @@ Reglas:
       bank:        parsed.bank ?? null,
       category:    parsed.category ?? null,
     }
-  } catch {
+  } catch (e) {
+    console.error('[Gemini] error:', e)
     return null
   }
 }
