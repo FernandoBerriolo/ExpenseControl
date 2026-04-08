@@ -42,8 +42,7 @@ export async function POST(req: NextRequest) {
   const chatId = String(message.chat.id)
 
   let inputText: string | null = null
-  let audioBase64: string | null = null
-  let audioMime: string | null = null
+  let transcribedText: string | null = null
 
   if (message.text) {
     inputText = (message.text as string).trim()
@@ -51,12 +50,16 @@ export async function POST(req: NextRequest) {
     const fileId = (message.voice ?? message.audio).file_id
     const fileData = await downloadTelegramFile(fileId)
     if (fileData) {
-      audioBase64 = fileData.base64
-      audioMime   = fileData.mime
+      transcribedText = await transcribeAudio(fileData.base64, fileData.mime)
+      if (!transcribedText) {
+        await sendMessage(chatId, '❌ No pude escuchar el audio\\. Intentá mandar el gasto por texto\\.', 'MarkdownV2')
+        return NextResponse.json({ ok: true })
+      }
+      console.log('[Audio] transcription:', transcribedText)
     }
   }
 
-  const text = inputText ?? ''
+  const text = inputText ?? transcribedText ?? ''
 
   // /start → muestra el chat ID para registrarse en la app
   if (text.startsWith('/start')) {
@@ -90,7 +93,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
-  const result = await parseWithAI(text || null, audioBase64, audioMime)
+  const result = await parseWithAI(text || null)
 
   if (!result) {
     await sendMessage(chatId,
@@ -316,18 +319,43 @@ async function downloadTelegramFile(fileId: string): Promise<{ base64: string; m
   }
 }
 
+// ─── Transcripción de audio con Gemini ───────────────────────────────────────
+async function transcribeAudio(audioBase64: string, audioMime: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { inlineData: { mimeType: audioMime, data: audioBase64 } },
+              { text: 'Transcribí este mensaje de voz al español exactamente como se dice. Devolvé solo el texto transcripto, sin explicaciones ni comillas.' },
+            ]
+          }],
+          generationConfig: { temperature: 0 },
+        }),
+      }
+    )
+    const data = await res.json()
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
+    console.log('[Audio] transcription result:', text)
+    return text || null
+  } catch (e) {
+    console.error('[Audio] transcription error:', e)
+    return null
+  }
+}
+
 // ─── Parsing con Gemini ───────────────────────────────────────────────────────
-async function parseWithAI(
-  text: string | null,
-  audioBase64: string | null = null,
-  audioMime: string | null = null
-): Promise<AIResult> {
+async function parseWithAI(text: string | null): Promise<AIResult> {
   const today = new Date(Date.now() - 3 * 60 * 60 * 1000)
   const todayStr = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`
   const monthStr = todayStr.slice(0, 7)
 
   const prompt = `Sos un asistente de gastos personales. Hoy es ${todayStr}.
-${text ? `Mensaje de texto: "${text}"` : 'Hay un audio adjunto. Transcribilo completamente y luego extraé los gastos.'}
+Mensaje: "${text}"
 
 Tu tarea: determinar si el mensaje contiene GASTOS a registrar o una CONSULTA sobre gastos.
 
@@ -379,11 +407,7 @@ Si es una pregunta sobre gastos, respondé con:
 - Meses: enero=01 feb=02 mar=03 abr=04 may=05 jun=06 jul=07 ago=08 sep=09 oct=10 nov=11 dic=12
 - Respondé ÚNICAMENTE con JSON válido, sin texto adicional, sin markdown`
 
-  const parts: object[] = []
-  if (audioBase64 && audioMime) {
-    parts.push({ inlineData: { mimeType: audioMime, data: audioBase64 } })
-  }
-  parts.push({ text: prompt })
+  const parts: object[] = [{ text: prompt }]
 
   try {
     const res = await fetch(
