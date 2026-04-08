@@ -15,7 +15,24 @@ export async function POST(req: NextRequest) {
   }
 
   const chatId = String(message.chat.id)
-  const text   = (message.text as string).trim()
+
+  // Determinar si es texto o audio de voz
+  let inputText: string | null = null
+  let audioBase64: string | null = null
+  let audioMime: string | null = null
+
+  if (message.text) {
+    inputText = (message.text as string).trim()
+  } else if (message.voice || message.audio) {
+    const fileId = (message.voice ?? message.audio).file_id
+    const fileData = await downloadTelegramFile(fileId)
+    if (fileData) {
+      audioBase64 = fileData.base64
+      audioMime   = fileData.mime
+    }
+  }
+
+  const text = inputText ?? ''
 
   // /start → muestra el chat ID para registrarse en la app
   if (text.startsWith('/start')) {
@@ -48,15 +65,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
-  // Parsear con IA
-  const parsed = await parseWithAI(text)
+  // Parsear con IA (texto o audio)
+  const parsed = await parseWithAI(text || null, audioBase64, audioMime)
   if (!parsed) {
     await sendMessage(chatId,
       '❌ No pude entender el gasto\\. Asegurate de mencionar el monto\\.\n\n' +
-      'Ejemplos:\n' +
+      'Podés mandar texto o un mensaje de voz, por ejemplo:\n' +
       '_"pizza 350 itau"_\n' +
-      '_"gasté 1200 en ropa con brou"_\n' +
-      '_"super 2500"_',
+      '_"gasté 1200 en ropa con brou"_',
       'MarkdownV2'
     )
     return NextResponse.json({ ok: true })
@@ -101,16 +117,40 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true })
 }
 
+// ─── Descarga archivo de Telegram y lo convierte a base64 ────────────────────
+async function downloadTelegramFile(fileId: string): Promise<{ base64: string; mime: string } | null> {
+  try {
+    const infoRes  = await fetch(`${API_BASE}/getFile?file_id=${fileId}`)
+    const infoData = await infoRes.json()
+    const filePath = infoData.result?.file_path
+    if (!filePath) return null
+
+    const fileRes  = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`)
+    const buffer   = await fileRes.arrayBuffer()
+    const bytes    = new Uint8Array(buffer)
+    let binary     = ''
+    bytes.forEach(b => { binary += String.fromCharCode(b) })
+    const base64   = btoa(binary)
+    const mime     = filePath.endsWith('.oga') || filePath.endsWith('.ogg') ? 'audio/ogg' : 'audio/mpeg'
+    return { base64, mime }
+  } catch {
+    return null
+  }
+}
+
 // ─── Parsing con Gemini ───────────────────────────────────────────────────────
-async function parseWithAI(text: string): Promise<{
+async function parseWithAI(
+  text: string | null,
+  audioBase64: string | null = null,
+  audioMime: string | null = null
+): Promise<{
   description: string
   amount: number
   bank: string | null
   category: string | null
 } | null> {
   const prompt = `Sos un asistente que extrae datos de gastos personales a partir de mensajes en español rioplatense.
-
-Dado este mensaje: "${text}"
+${text ? `Mensaje de texto: "${text}"` : 'El mensaje es un audio de voz — transcribilo y extraé el gasto.'}
 
 Extraé la información y respondé ÚNICAMENTE con JSON válido, sin texto adicional:
 {
@@ -121,10 +161,16 @@ Extraé la información y respondé ÚNICAMENTE con JSON válido, sin texto adic
 }
 
 Reglas:
-- Si no hay monto claro en el mensaje, respondé: {"error": "sin_monto"}
+- Si no hay monto claro, respondé: {"error": "sin_monto"}
 - "itau" o "itaú" → "Itaú", "brou" → "BROU", "scotia" o "scotiabank" → "Scotiabank"
 - La descripción debe ser corta (2-4 palabras máximo)
 - Inferí la categoría según el contexto (pizza/helado/super → comida, uber/taxi → transporte, etc.)`
+
+  const parts: object[] = []
+  if (audioBase64 && audioMime) {
+    parts.push({ inlineData: { mimeType: audioMime, data: audioBase64 } })
+  }
+  parts.push({ text: prompt })
 
   try {
     const res = await fetch(
@@ -133,7 +179,7 @@ Reglas:
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
+          contents: [{ parts }],
           generationConfig: { temperature: 0 },
         }),
       }
