@@ -7,14 +7,18 @@ const OWED_USER_EMAIL = process.env.OWED_USER_EMAIL ?? ''
 const API_BASE        = `https://api.telegram.org/bot${BOT_TOKEN}`
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type ExpenseResult = {
-  type: 'expense'
+type ExpenseItem = {
   description: string
   amount: number
   bank: string | null
   category: string | null
   installments: number | null
   date: string | null
+}
+
+type ExpensesResult = {
+  type: 'expenses'
+  items: ExpenseItem[]
 }
 
 type QueryResult = {
@@ -24,7 +28,7 @@ type QueryResult = {
   month: string   // YYYY-MM
 }
 
-type AIResult = ExpenseResult | QueryResult | null
+type AIResult = ExpensesResult | QueryResult | null
 
 // ─── Handler principal ────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
@@ -62,7 +66,8 @@ export async function POST(req: NextRequest) {
       `Copialo y pegalo en la app \\(botón 🔗 → tab Telegram\\) para vincular tu cuenta\\.\n\n` +
       `Después podés registrar gastos o consultar:\n` +
       `_"pizza 350 itau"_\n` +
-      `_"celular 30000 en 6 cuotas con itau"_\n` +
+      `_"me compré unas sandalias por 3000"_\n` +
+      `_"compré hamburguesa por 100 y papas por 300"_\n` +
       `_"cuánto gasté en comida en abril"_\n` +
       `_"cuánto le debo a Fer este mes"_`,
       'MarkdownV2'
@@ -91,10 +96,10 @@ export async function POST(req: NextRequest) {
     await sendMessage(chatId,
       '❌ No pude entender el mensaje\\.\n\n' +
       '*Registrar gastos:*\n' +
-      '_"pizza 350 itau"_\n' +
+      '_"me compré unas sandalias por 3000"_\n' +
       '_"gasté 1200 en ropa con brou"_\n' +
       '_"celular 30000 en 6 cuotas con itau"_\n' +
-      '_"super 800 el 3 de abril"_\n\n' +
+      '_"hamburguesa por 150 y gaseosa por 80"_\n\n' +
       '*Consultas:*\n' +
       '_"cuánto gasté en abril"_\n' +
       '_"cuánto gasté en comida este mes"_\n' +
@@ -109,57 +114,80 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
-  // ── Guardar gasto ─────────────────────────────────────────────────────────
+  // ── Guardar gastos ────────────────────────────────────────────────────────
   const now = new Date(Date.now() - 3 * 60 * 60 * 1000)
-
-  let expenseDate: string
-  if (result.date) {
-    expenseDate = result.date
-  } else {
-    const y = now.getUTCFullYear()
-    const m = String(now.getUTCMonth() + 1).padStart(2, '0')
-    const d = String(now.getUTCDate()).padStart(2, '0')
-    expenseDate = `${y}-${m}-${d}`
-  }
 
   const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(phoneUser.user_id)
   const isGuille = !!OWED_USER_EMAIL && authUser?.user?.email === OWED_USER_EMAIL
 
-  const installments = result.installments && result.installments > 1 ? result.installments : 1
-  const installmentAmount = Math.round((result.amount / installments) * 100) / 100
-  const [baseYear, baseMonthNum] = expenseDate.split('-').map(Number)
-
-  const entries = Array.from({ length: installments }, (_, i) => {
-    const d = new Date(Date.UTC(baseYear, baseMonthNum - 1 + i, 1))
-    const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
-    return {
-      user_id:      phoneUser.user_id,
-      description:  installments > 1 ? `${result.description} (${i + 1}/${installments})` : result.description,
-      amount:       installmentAmount,
-      currency:     'UYU',
-      bank:         result.bank,
-      month,
-      expense_date: expenseDate,
-      category:     result.category,
-      is_owed:      isGuille && !!result.bank,
+  const allEntries = []
+  for (const item of result.items) {
+    let expenseDate: string
+    if (item.date) {
+      expenseDate = item.date
+    } else {
+      const y = now.getUTCFullYear()
+      const m = String(now.getUTCMonth() + 1).padStart(2, '0')
+      const d = String(now.getUTCDate()).padStart(2, '0')
+      expenseDate = `${y}-${m}-${d}`
     }
-  })
 
-  const { error } = await supabaseAdmin.from('expenses').insert(entries)
+    const installments = item.installments && item.installments > 1 ? item.installments : 1
+    const installmentAmount = Math.round((item.amount / installments) * 100) / 100
+    const [baseYear, baseMonthNum] = expenseDate.split('-').map(Number)
+
+    for (let i = 0; i < installments; i++) {
+      const d = new Date(Date.UTC(baseYear, baseMonthNum - 1 + i, 1))
+      const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+      allEntries.push({
+        user_id:      phoneUser.user_id,
+        description:  installments > 1 ? `${item.description} (${i + 1}/${installments})` : item.description,
+        amount:       installmentAmount,
+        currency:     'UYU',
+        bank:         item.bank,
+        month,
+        expense_date: expenseDate,
+        category:     item.category,
+        is_owed:      isGuille && !!item.bank,
+      })
+    }
+  }
+
+  const { error } = await supabaseAdmin.from('expenses').insert(allEntries)
 
   if (error) {
-    await sendMessage(chatId, '❌ Error al guardar el gasto\\. Intentá de nuevo\\.', 'MarkdownV2')
-  } else {
-    const bankLine   = result.bank ? `\nTarjeta: ${escapeMarkdown(result.bank)}` : '\nPago: Efectivo'
-    const catLine    = result.category ? `\nCategoría: ${escapeMarkdown(CATEGORY_LABELS[result.category] ?? result.category)}` : ''
-    const owedLine   = isGuille && result.bank ? '\n💸 Marcado como Debes a Fer' : ''
+    await sendMessage(chatId, '❌ Error al guardar\\. Intentá de nuevo\\.', 'MarkdownV2')
+  } else if (result.items.length === 1) {
+    const item = result.items[0]
+    const installments = item.installments && item.installments > 1 ? item.installments : 1
+    const installmentAmount = Math.round((item.amount / installments) * 100) / 100
+    const expenseDate = item.date ?? (() => {
+      const y = now.getUTCFullYear()
+      const m = String(now.getUTCMonth() + 1).padStart(2, '0')
+      const d = String(now.getUTCDate()).padStart(2, '0')
+      return `${y}-${m}-${d}`
+    })()
+    const bankLine   = item.bank ? `\nTarjeta: ${escapeMarkdown(item.bank)}` : '\nPago: Efectivo'
+    const catLine    = item.category ? `\nCategoría: ${escapeMarkdown(CATEGORY_LABELS[item.category] ?? item.category)}` : ''
+    const owedLine   = isGuille && item.bank ? '\n💸 Marcado como Debes a Fer' : ''
     const cuotasLine = installments > 1 ? `\n${installments} cuotas de \\$${escapeMarkdown(installmentAmount.toLocaleString('es-UY'))}` : ''
-    const dateLine   = result.date ? `\nFecha: ${escapeMarkdown(expenseDate.split('-').reverse().join('/'))}` : ''
+    const dateLine   = item.date ? `\nFecha: ${escapeMarkdown(expenseDate.split('-').reverse().join('/'))}` : ''
     await sendMessage(chatId,
       `✅ *Gasto guardado*\n\n` +
-      `*${escapeMarkdown(result.description)}*\n` +
-      `\\$ ${escapeMarkdown(result.amount.toLocaleString('es-UY'))}` +
+      `*${escapeMarkdown(item.description)}*\n` +
+      `\\$ ${escapeMarkdown(item.amount.toLocaleString('es-UY'))}` +
       `${cuotasLine}${bankLine}${catLine}${dateLine}${owedLine}`,
+      'MarkdownV2'
+    )
+  } else {
+    // Múltiples gastos
+    const lines = result.items.map(item =>
+      `• *${escapeMarkdown(item.description)}* \\$${escapeMarkdown(item.amount.toLocaleString('es-UY'))}` +
+      (item.bank ? ` \\(${escapeMarkdown(item.bank)}\\)` : '')
+    ).join('\n')
+    const total = result.items.reduce((s, i) => s + i.amount, 0)
+    await sendMessage(chatId,
+      `✅ *${result.items.length} gastos guardados*\n\n${lines}\n\n*Total: \\$${escapeMarkdown(total.toLocaleString('es-UY'))}*`,
       'MarkdownV2'
     )
   }
@@ -223,7 +251,7 @@ async function handleQuery(chatId: string, userId: string, q: QueryResult) {
   if (q.query === 'monthly_total') {
     const { data } = await supabaseAdmin
       .from('expenses')
-      .select('amount, category, bank')
+      .select('amount, category')
       .eq('user_id', userId)
       .eq('month', q.month)
 
@@ -238,9 +266,8 @@ async function handleQuery(chatId: string, userId: string, q: QueryResult) {
       return
     }
 
-    // Top categorías
     const byCategory: Record<string, number> = {}
-    for (const e of expenses) {
+    for (const e of expenses as { amount: unknown; category: string | null }[]) {
       const key = e.category ?? 'otros'
       byCategory[key] = (byCategory[key] ?? 0) + Number(e.amount)
     }
@@ -296,31 +323,42 @@ async function parseWithAI(
   audioMime: string | null = null
 ): Promise<AIResult> {
   const today = new Date(Date.now() - 3 * 60 * 60 * 1000)
-  const todayStr  = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`
-  const monthStr  = todayStr.slice(0, 7)
+  const todayStr = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`
+  const monthStr = todayStr.slice(0, 7)
 
   const prompt = `Sos un asistente de gastos personales. Hoy es ${todayStr}.
 ${text ? `Mensaje: "${text}"` : 'El mensaje es un audio de voz — transcribilo primero.'}
 
-Determiná si el mensaje es un GASTO a registrar o una CONSULTA sobre gastos.
+Determiná si el mensaje es un GASTO (o varios gastos) a registrar, o una CONSULTA sobre gastos.
 
-Si es un GASTO, respondé con este JSON:
+IMPORTANTE: "por [monto]" significa el precio. Ejemplos:
+- "me compré unas sandalias por 3000" → gasto de 3000
+- "compré una hamburguesa por 150" → gasto de 150
+- "pagué 500 por el super" → gasto de 500
+
+Si es un GASTO (uno o varios), respondé SIEMPRE con este formato:
 {
-  "type": "expense",
-  "description": "nombre corto del gasto (2-4 palabras)",
-  "amount": número total (sin símbolos),
-  "bank": "Itaú" | "BROU" | "Scotiabank" | null,
-  "category": "comida"|"nafta"|"ropa"|"hogar"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes" | null,
-  "installments": número de cuotas o null,
-  "date": "YYYY-MM-DD" si mencionan fecha específica o null
+  "type": "expenses",
+  "items": [
+    {
+      "description": "nombre corto (2-4 palabras)",
+      "amount": número total (sin símbolos),
+      "bank": "Itaú" | "BROU" | "Scotiabank" | null,
+      "category": "comida"|"nafta"|"ropa"|"hogar"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes" | null,
+      "installments": número de cuotas o null,
+      "date": "YYYY-MM-DD" si mencionan fecha específica, o null
+    }
+  ]
 }
 
-Si es una CONSULTA, respondé con este JSON:
+Si son varios gastos en un solo mensaje (ej: "hamburguesa por 100 y papas por 300"), incluí un item por cada gasto en el array.
+
+Si es una CONSULTA, respondé con este formato:
 {
   "type": "query",
   "query": "owed" | "category_total" | "monthly_total",
   "category": categoría (solo para category_total, si no null),
-  "month": "YYYY-MM" del mes consultado
+  "month": "YYYY-MM"
 }
 
 Tipos de consulta:
@@ -332,7 +370,7 @@ Reglas:
 - Si no hay monto claro en un gasto, respondé: {"error": "sin_monto"}
 - "itau"/"itaú" → "Itaú", "brou" → "BROU", "scotia" → "Scotiabank"
 - "este mes" → "${monthStr}", "el mes pasado" → mes anterior
-- Meses en español: enero=01, febrero=02, marzo=03, abril=04, mayo=05, junio=06, julio=07, agosto=08, septiembre=09, octubre=10, noviembre=11, diciembre=12
+- Meses: enero=01, febrero=02, marzo=03, abril=04, mayo=05, junio=06, julio=07, agosto=08, septiembre=09, octubre=10, noviembre=11, diciembre=12
 - Respondé ÚNICAMENTE con JSON válido, sin texto adicional`
 
   const parts: object[] = []
@@ -358,7 +396,8 @@ Reglas:
     const raw = data.candidates?.[0]?.content?.parts?.[0]?.text
     if (!raw) return null
 
-    const clean  = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+    const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+    console.log('[Gemini] response:', clean)
     const parsed = JSON.parse(clean)
 
     if (parsed.error) return null
@@ -373,17 +412,19 @@ Reglas:
       }
     }
 
-    if (parsed.type === 'expense') {
-      if (!parsed.amount || Number(parsed.amount) <= 0) return null
-      return {
-        type:         'expense',
-        description:  parsed.description ?? text ?? 'Gasto',
-        amount:       Number(parsed.amount),
-        bank:         parsed.bank ?? null,
-        category:     parsed.category ?? null,
-        installments: parsed.installments ? Number(parsed.installments) : null,
-        date:         parsed.date ?? null,
-      }
+    if (parsed.type === 'expenses' && Array.isArray(parsed.items) && parsed.items.length > 0) {
+      const items: ExpenseItem[] = parsed.items
+        .filter((i: { amount?: unknown }) => i.amount && Number(i.amount) > 0)
+        .map((i: { description?: string; amount: unknown; bank?: string | null; category?: string | null; installments?: number | null; date?: string | null }) => ({
+          description:  i.description ?? 'Gasto',
+          amount:       Number(i.amount),
+          bank:         i.bank ?? null,
+          category:     i.category ?? null,
+          installments: i.installments ? Number(i.installments) : null,
+          date:         i.date ?? null,
+        }))
+      if (items.length === 0) return null
+      return { type: 'expenses', items }
     }
 
     return null
