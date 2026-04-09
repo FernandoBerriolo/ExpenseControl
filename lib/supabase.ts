@@ -48,6 +48,7 @@ export const CATEGORIES = [
   { value: 'viajes',          label: 'Viajes',       emoji: '✈️' },
   { value: 'regalos',         label: 'Regalos',      emoji: '🎁' },
   { value: 'facturas',        label: 'Facturas',     emoji: '📄' },
+  { value: 'belleza',         label: 'Belleza',      emoji: '💅' },
   { value: 'otros',           label: 'Otros',        emoji: '📦' },
 ] as const
 

@@ -368,19 +368,22 @@ Si hay uno o más gastos, respondé con este JSON (SIEMPRE con "items" como arra
       "description": "nombre corto del gasto (2-4 palabras)",
       "amount": número (solo dígitos, sin símbolos),
       "bank": "Itaú" | "BROU" | "Scotiabank" | null,
-      "category": "comida"|"nafta"|"ropa"|"hogar"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes" | null,
+      "category": "comida"|"nafta"|"ropa"|"hogar"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza" | null,
       "installments": número de cuotas o null,
       "date": "YYYY-MM-DD" solo si mencionan fecha distinta a hoy, si no null
     }
   ]
 }
 
-CRÍTICO — Ejemplos de extracción de monto:
-- "compré un helado por 150" → amount: 150
-- "me compré unas sandalias por 3000" → amount: 3000
-- "gasté 300 en la cena" → amount: 300
-- "pagué 500 por el super" → amount: 500
+CRÍTICO — Extracción de monto (ignorar símbolos de moneda como $ o $U):
+- "compré un helado por $150" → amount: 150
+- "me compré unas sandalias por $3000" → amount: 3000
+- "gasté $300 en la cena" → amount: 300
+- "pagué $500 por el super" → amount: 500
+- "me hice las uñas por $750" → amount: 750
 - "me salió 200 la pizza" → amount: 200
+
+CRÍTICO — Categoría "belleza": uñas, peluquería, corte de pelo, tintura, shampú, acondicionador, cremas, maquillaje, depilación, manicura, pedicura, perfume, skincare → category: "belleza"
 
 CRÍTICO — Múltiples gastos: si el mensaje menciona más de un gasto, CADA UNO va como un item separado:
 - "compré un helado por 150 y en la cena gasté 300 que fue una milanesa" →
@@ -401,6 +404,7 @@ Si es una pregunta sobre gastos, respondé con:
 - "monthly_total": cuánto gasté en total
 
 ═══ REGLAS ═══
+- Ignorar símbolos de moneda ($, $U, U$S) al extraer montos — solo el número
 - Sin monto claro → {"error": "sin_monto"}
 - "itau"/"itaú" → "Itaú" | "brou" → "BROU" | "scotia" → "Scotiabank"
 - "este mes" → "${monthStr}" | "el mes pasado" → mes anterior
@@ -475,7 +479,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   comida: '🍔 Comida', nafta: '⛽ Nafta', ropa: '👕 Ropa', hogar: '🏠 Hogar',
   salud: '💊 Salud', ocio: '🎬 Ocio', transporte: '🚌 Transporte', tech: '📱 Tech',
   mascotas: '🐾 Mascotas', educacion: '📚 Educación', regalos: '🎁 Regalos',
-  facturas: '📄 Facturas', viajes: '✈️ Viajes', otros: '📦 Otros',
+  facturas: '📄 Facturas', viajes: '✈️ Viajes', belleza: '💅 Belleza', otros: '📦 Otros',
 }
 
 // ─── Telegram helpers ─────────────────────────────────────────────────────────
