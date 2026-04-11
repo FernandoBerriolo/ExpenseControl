@@ -32,14 +32,18 @@ type AIResult = ExpensesResult | QueryResult | null
 
 // ─── Handler principal ────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
+  console.log('[TG] webhook received')
   const body = await req.json()
+  console.log('[TG] body:', JSON.stringify(body).slice(0, 300))
 
   const message = body.message
   if (!message || (!message.text && !message.voice && !message.audio)) {
+    console.log('[TG] no text/voice/audio, skipping')
     return NextResponse.json({ ok: true })
   }
 
   const chatId = String(message.chat.id)
+  console.log('[TG] chatId:', chatId, '| text:', message.text ?? '(audio)')
 
   let inputText: string | null = null
   let transcribedText: string | null = null
@@ -48,18 +52,25 @@ export async function POST(req: NextRequest) {
     inputText = (message.text as string).trim()
   } else if (message.voice || message.audio) {
     const fileId = (message.voice ?? message.audio).file_id
+    console.log('[TG] audio fileId:', fileId)
     const fileData = await downloadTelegramFile(fileId)
-    if (fileData) {
-      transcribedText = await transcribeAudio(fileData.base64, fileData.mime)
-      if (!transcribedText) {
-        await sendMessage(chatId, '❌ No pude escuchar el audio\\. Intentá mandar el gasto por texto\\.', 'MarkdownV2')
-        return NextResponse.json({ ok: true })
-      }
-      console.log('[Audio] transcription:', transcribedText)
+    if (!fileData) {
+      console.log('[TG] failed to download audio')
+      await sendMessage(chatId, '❌ No pude descargar el audio\\.', 'MarkdownV2')
+      return NextResponse.json({ ok: true })
     }
+    console.log('[TG] audio downloaded, mime:', fileData.mime, '| base64 length:', fileData.base64.length)
+    transcribedText = await transcribeAudio(fileData.base64, fileData.mime)
+    if (!transcribedText) {
+      console.log('[TG] transcription returned null')
+      await sendMessage(chatId, '❌ No pude escuchar el audio\\. Intentá mandar el gasto por texto\\.', 'MarkdownV2')
+      return NextResponse.json({ ok: true })
+    }
+    console.log('[TG] transcription:', transcribedText)
   }
 
   const text = inputText ?? transcribedText ?? ''
+  console.log('[TG] final text:', text)
 
   // /start → muestra el chat ID para registrarse en la app
   if (text.startsWith('/start')) {
@@ -79,11 +90,14 @@ export async function POST(req: NextRequest) {
   }
 
   // Buscar usuario vinculado
-  const { data: phoneUser } = await supabaseAdmin
+  console.log('[TG] looking up phoneUser for chatId:', chatId)
+  const { data: phoneUser, error: phoneError } = await supabaseAdmin
     .from('phone_users')
     .select('user_id')
     .eq('phone', chatId)
     .single()
+
+  console.log('[TG] phoneUser:', phoneUser, '| error:', phoneError?.message)
 
   if (!phoneUser) {
     await sendMessage(chatId,
@@ -93,7 +107,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
+  console.log('[TG] calling parseWithAI with text:', text)
   const result = await parseWithAI(text || null)
+  console.log('[TG] parseWithAI result:', JSON.stringify(result))
 
   if (!result) {
     await sendMessage(chatId,
@@ -338,7 +354,9 @@ async function transcribeAudio(audioBase64: string, audioMime: string): Promise<
         }),
       }
     )
+    console.log('[Audio] gemini status:', res.status)
     const data = await res.json()
+    if (res.status !== 200) console.log('[Audio] gemini error body:', JSON.stringify(data))
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
     console.log('[Audio] transcription result:', text)
     return text || null
@@ -426,12 +444,18 @@ Si es una pregunta sobre gastos, respondé con:
       }
     )
 
+    console.log('[Gemini] status:', res.status)
     const data = await res.json()
+    if (res.status !== 200) {
+      console.log('[Gemini] error body:', JSON.stringify(data))
+      return null
+    }
     const raw = data.candidates?.[0]?.content?.parts?.[0]?.text
+    console.log('[Gemini] raw:', raw)
     if (!raw) return null
 
     const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
-    console.log('[Gemini] response:', clean)
+    console.log('[Gemini] clean:', clean)
     const parsed = JSON.parse(clean)
 
     if (parsed.error) return null
