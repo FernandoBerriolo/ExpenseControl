@@ -341,10 +341,9 @@ export default function Dashboard() {
     setWhatsappLoading(true)
     setWhatsappSaved(false)
     const phone = whatsappInput.trim()
-    const { error } = await supabase.from('phone_users').upsert(
-      { whatsapp_phone: phone, user_id: myUserId },
-      { onConflict: 'user_id' }
-    )
+    const { error } = await supabase.from('phone_users')
+      .update({ whatsapp_phone: phone })
+      .eq('user_id', myUserId)
     if (!error) { setMyWhatsapp(phone); setWhatsappSaved(true); setTimeout(() => setWhatsappSaved(false), 3000) }
     setWhatsappLoading(false)
   }
