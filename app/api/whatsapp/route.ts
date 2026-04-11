@@ -24,12 +24,13 @@ type AIResult       = ExpensesResult | QueryResult | null
 
 // ─── Handler principal ────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
-  const formData  = await req.formData()
-  const body      = (formData.get('Body') as string ?? '').trim()
-  const from      = (formData.get('From') as string ?? '').replace('whatsapp:', '')
-  const numMedia  = parseInt(formData.get('NumMedia') as string ?? '0')
-  const mediaUrl  = numMedia > 0 ? formData.get('MediaUrl0')          as string : null
-  const mediaType = numMedia > 0 ? formData.get('MediaContentType0')  as string : null
+  const rawBody   = await req.text()
+  const params    = new URLSearchParams(rawBody)
+  const body      = (params.get('Body') ?? '').trim()
+  const from      = (params.get('From') ?? '').replace('whatsapp:', '')
+  const numMedia  = parseInt(params.get('NumMedia') ?? '0')
+  const mediaUrl  = numMedia > 0 ? params.get('MediaUrl0')         : null
+  const mediaType = numMedia > 0 ? params.get('MediaContentType0') : null
 
   if (!from) return twiml('')
 
