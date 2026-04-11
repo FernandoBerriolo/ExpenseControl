@@ -1,5 +1,6 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
+import { supabase } from '@/lib/supabase'
 
 type Message = { role: 'user' | 'bot'; text: string; saved?: boolean }
 
@@ -23,9 +24,13 @@ export default function ChatWidget({ onExpenseSaved }: { onExpenseSaved?: () => 
     setMessages((prev: Message[]) => [...prev, { role: 'user', text: userMsg }])
     setLoading(true)
     try {
+      const { data: { session } } = await supabase.auth.getSession()
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({ message: userMsg }),
       })
       const data = await res.json()

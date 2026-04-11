@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { parseExpenseMessage } from '@/lib/parse-expense'
 
@@ -14,14 +12,10 @@ const CATEGORY_LABELS: Record<string, string> = {
 }
 
 export async function POST(req: NextRequest) {
-  // Obtener usuario autenticado
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } }
-  )
-  const { data: { user } } = await supabase.auth.getUser()
+  // Obtener usuario autenticado via Bearer token
+  const token = req.headers.get('authorization')?.replace('Bearer ', '')
+  if (!token) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
+  const { data: { user } } = await supabaseAdmin.auth.getUser(token)
   if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
 
   const { message } = await req.json()
