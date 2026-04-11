@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 
 type Message = { role: 'user' | 'bot'; text: string; saved?: boolean }
 
-export default function ChatWidget({ onExpenseSaved }: { onExpenseSaved?: () => void }) {
+export default function ChatWidget({ onExpenseSaved, hidden }: { onExpenseSaved?: () => void; hidden?: boolean }) {
   const [open, setOpen]         = useState(false)
   const [messages, setMessages] = useState<Message[]>([
     { role: 'bot', text: '¡Hola! Contame qué gastaste o preguntame sobre tus gastos 💬' }
@@ -16,6 +16,11 @@ export default function ChatWidget({ onExpenseSaved }: { onExpenseSaved?: () => 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, open])
+
+  // Cerrar cuando el modal de agregar gasto se abre
+  useEffect(() => {
+    if (hidden) setOpen(false)
+  }, [hidden])
 
   async function send(text: string) {
     if (!text.trim() || loading) return
@@ -43,27 +48,37 @@ export default function ChatWidget({ onExpenseSaved }: { onExpenseSaved?: () => 
     }
   }
 
+  if (hidden) return null
+
   return (
     <>
-      {/* Botón flotante */}
+      {/* Backdrop para cerrar al tocar fuera */}
+      {open && (
+        <div
+          onClick={() => setOpen(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 999 }}
+        />
+      )}
+
+      {/* Botón flotante — abajo a la izquierda */}
       <button
         onClick={() => setOpen(o => !o)}
         style={{
-          position: 'fixed', bottom: 24, right: 100, zIndex: 1000,
+          position: 'fixed', bottom: 24, left: 24, zIndex: 1001,
           width: 64, height: 64, borderRadius: '50%',
           background: 'linear-gradient(135deg, #10b981, #059669)',
           border: 'none', cursor: 'pointer', boxShadow: '0 4px 16px rgba(16,185,129,0.4)',
           fontSize: 26, display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
-        title="Agregar gasto con IA"
+        title="Asistente de gastos"
       >
         {open ? '✕' : '💬'}
       </button>
 
-      {/* Panel del chat */}
+      {/* Panel del chat — abre desde la izquierda */}
       {open && (
         <div style={{
-          position: 'fixed', bottom: 100, right: 24, zIndex: 1000,
+          position: 'fixed', bottom: 100, left: 24, zIndex: 1001,
           width: 340, maxWidth: 'calc(100vw - 48px)',
           background: '#fff', borderRadius: 16,
           boxShadow: '0 8px 32px rgba(0,0,0,0.15)',

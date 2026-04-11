@@ -112,6 +112,9 @@ export default function Dashboard() {
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [loading, setLoading] = useState(true)
 
+  const [showHistory, setShowHistory] = useState(false)
+  const [monthlyHistory, setMonthlyHistory] = useState<{ month: string; uyu: number; usd: number }[]>([])
+
   const [modalMode, setModalMode] = useState<ModalMode>(null)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
@@ -253,6 +256,25 @@ export default function Dashboard() {
   }, [activeAccount, selectedMonth])
 
   useEffect(() => { loadOwedTotal() }, [loadOwedTotal])
+
+  const loadMonthlyHistory = useCallback(async () => {
+    if (!activeAccount) return
+    const { data } = await supabase
+      .from('expenses')
+      .select('month, amount, currency')
+      .eq('user_id', activeAccount.user_id)
+      .order('month', { ascending: true })
+    if (!data) return
+    const map: Record<string, { uyu: number; usd: number }> = {}
+    for (const e of data as { month: string; amount: number; currency: string }[]) {
+      if (!map[e.month]) map[e.month] = { uyu: 0, usd: 0 }
+      if (e.currency === 'UYU') map[e.month].uyu += e.amount
+      else map[e.month].usd += e.amount
+    }
+    setMonthlyHistory(Object.entries(map).map(([month, v]) => ({ month, ...v })))
+  }, [activeAccount])
+
+  useEffect(() => { if (showHistory) loadMonthlyHistory() }, [showHistory, loadMonthlyHistory])
 
   // --- Share ---
   async function handleGenerateCode() {
@@ -693,6 +715,87 @@ export default function Dashboard() {
             )}
           </div>
         )}
+
+        {/* Historial mensual */}
+        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <button
+            className="w-full px-4 py-3.5 flex items-center justify-between"
+            onClick={() => setShowHistory(!showHistory)}
+          >
+            <span className="text-sm font-semibold text-gray-700">📅 Historial por mes</span>
+            <span className="text-gray-400 text-lg">{showHistory ? '▲' : '▼'}</span>
+          </button>
+
+          {showHistory && (
+            <div className="px-4 pb-4">
+              {monthlyHistory.length === 0 ? (
+                <p className="text-sm text-gray-400 py-2">Sin datos</p>
+              ) : (() => {
+                const maxUYUh = Math.max(...monthlyHistory.map(m => m.uyu), 1)
+                const totalAllTimeUYU = monthlyHistory.reduce((s, m) => s + m.uyu, 0)
+                const totalAllTimeUSD = monthlyHistory.reduce((s, m) => s + m.usd, 0)
+                return (
+                  <>
+                    {/* Totales acumulados */}
+                    <div className="flex gap-3 mb-4">
+                      {totalAllTimeUYU > 0 && (
+                        <div className="flex-1 rounded-xl px-3 py-2.5" style={{ background: '#f0f2ff' }}>
+                          <p className="text-xs text-gray-400 mb-0.5">Acumulado pesos</p>
+                          <p className="text-sm font-bold" style={{ color: '#667eea' }}>
+                            $ {totalAllTimeUYU.toLocaleString('es-UY', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          </p>
+                        </div>
+                      )}
+                      {totalAllTimeUSD > 0 && (
+                        <div className="flex-1 rounded-xl px-3 py-2.5" style={{ background: '#f5f3ff' }}>
+                          <p className="text-xs text-gray-400 mb-0.5">Acumulado dólares</p>
+                          <p className="text-sm font-bold" style={{ color: '#764ba2' }}>
+                            USD {totalAllTimeUSD.toLocaleString('es-UY', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Barras por mes */}
+                    <div className="space-y-2.5">
+                      {[...monthlyHistory].reverse().map(m => {
+                        const isSelected = m.month === selectedMonth
+                        return (
+                          <button
+                            key={m.month}
+                            className="w-full text-left"
+                            onClick={() => setSelectedMonth(m.month)}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className={`text-xs font-medium ${isSelected ? 'text-indigo-600' : 'text-gray-500'}`}>
+                                {monthLabel(m.month)} {isSelected && '◀'}
+                              </span>
+                              <span className={`text-xs font-bold ${isSelected ? 'text-indigo-600' : 'text-gray-700'}`}>
+                                $ {m.uyu.toLocaleString('es-UY', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                {m.usd > 0 && <span className="text-purple-500 ml-1">· USD {m.usd.toLocaleString('es-UY', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>}
+                              </span>
+                            </div>
+                            <div className="w-full bg-gray-100 rounded-full h-1.5">
+                              <div
+                                className="h-1.5 rounded-full transition-all"
+                                style={{
+                                  width: `${(m.uyu / maxUYUh) * 100}%`,
+                                  background: isSelected
+                                    ? 'linear-gradient(135deg, #667eea, #764ba2)'
+                                    : '#c7d2fe',
+                                }}
+                              />
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </>
+                )
+              })()}
+            </div>
+          )}
+        </div>
 
         {/* Expenses list */}
         <div className="space-y-3">
@@ -1272,7 +1375,7 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-      <ChatWidget onExpenseSaved={loadExpenses} />
+      <ChatWidget onExpenseSaved={loadExpenses} hidden={!!modalMode} />
     </div>
   )
 }
