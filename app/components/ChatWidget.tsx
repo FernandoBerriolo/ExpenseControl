@@ -49,7 +49,7 @@ export default function ChatWidget({ onExpenseSaved }: { onExpenseSaved?: () => 
       <button
         onClick={() => setOpen(o => !o)}
         style={{
-          position: 'fixed', bottom: 24, right: 24, zIndex: 1000,
+          position: 'fixed', bottom: 96, right: 24, zIndex: 1000,
           width: 56, height: 56, borderRadius: '50%',
           background: 'linear-gradient(135deg, #10b981, #059669)',
           border: 'none', cursor: 'pointer', boxShadow: '0 4px 16px rgba(16,185,129,0.4)',
