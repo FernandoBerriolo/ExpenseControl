@@ -2,6 +2,8 @@
 import { useState, useRef, useEffect } from 'react'
 
 type Message = { role: 'user' | 'bot'; text: string; saved?: boolean }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyRecognition = any
 
 export default function ChatWidget({ onExpenseSaved }: { onExpenseSaved?: () => void }) {
   const [open, setOpen]       = useState(false)
@@ -12,7 +14,7 @@ export default function ChatWidget({ onExpenseSaved }: { onExpenseSaved?: () => 
   const [loading, setLoading] = useState(false)
   const [listening, setListening] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const recognitionRef = useRef<SpeechRecognition | null>(null)
+  const recognitionRef = useRef<AnyRecognition>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -22,7 +24,7 @@ export default function ChatWidget({ onExpenseSaved }: { onExpenseSaved?: () => 
     if (!text.trim() || loading) return
     const userMsg = text.trim()
     setInput('')
-    setMessages(prev => [...prev, { role: 'user', text: userMsg }])
+    setMessages((prev: Message[]) => [...prev, { role: 'user', text: userMsg }])
     setLoading(true)
     try {
       const res = await fetch('/api/chat', {
@@ -31,18 +33,19 @@ export default function ChatWidget({ onExpenseSaved }: { onExpenseSaved?: () => 
         body: JSON.stringify({ message: userMsg }),
       })
       const data = await res.json()
-      setMessages(prev => [...prev, { role: 'bot', text: data.reply ?? '❌ Error inesperado', saved: data.saved }])
+      setMessages((prev: Message[]) => [...prev, { role: 'bot', text: data.reply ?? '❌ Error inesperado', saved: data.saved }])
       if (data.saved && onExpenseSaved) onExpenseSaved()
     } catch {
-      setMessages(prev => [...prev, { role: 'bot', text: '❌ No se pudo conectar. Revisá tu conexión.' }])
+      setMessages((prev: Message[]) => [...prev, { role: 'bot', text: '❌ No se pudo conectar. Revisá tu conexión.' }])
     } finally {
       setLoading(false)
     }
   }
 
   function toggleVoice() {
-    const SR = (window as typeof window & { SpeechRecognition?: typeof SpeechRecognition; webkitSpeechRecognition?: typeof SpeechRecognition }).SpeechRecognition
-      ?? (window as typeof window & { webkitSpeechRecognition?: typeof SpeechRecognition }).webkitSpeechRecognition
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any
+    const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition
     if (!SR) { alert('Tu navegador no soporta voz. Usá Chrome.'); return }
 
     if (listening) {
