@@ -34,7 +34,7 @@ export default function RootLayout({
   return (
     <html lang="es" className={`${geist.variable} h-full`}>
       <head>
-        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+        <link rel="apple-touch-icon" href="/apple-icon" />
       </head>
       <body className="min-h-full">
         {children}
