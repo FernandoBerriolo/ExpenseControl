@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     if (result.query === 'owed') {
       const { data } = await supabaseAdmin.from('expenses').select('amount')
         .eq('user_id', user.id).eq('is_owed', true).eq('month', month)
-      const total = (data ?? []).reduce((s, e) => s + Number(e.amount), 0)
+      const total = (data ?? []).reduce((s: number, e: { amount: unknown }) => s + Number(e.amount), 0)
       return NextResponse.json({
         reply: total === 0
           ? `No tenés gastos marcados como "Debes a Fer" en ${monthLabel}.`
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     if (result.query === 'category_total' && result.category) {
       const { data } = await supabaseAdmin.from('expenses').select('amount')
         .eq('user_id', user.id).eq('category', result.category).eq('month', month)
-      const total = (data ?? []).reduce((s, e) => s + Number(e.amount), 0)
+      const total = (data ?? []).reduce((s: number, e: { amount: unknown }) => s + Number(e.amount), 0)
       const cat = CATEGORY_LABELS[result.category] ?? result.category
       return NextResponse.json({
         reply: total === 0
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
       const { data } = await supabaseAdmin.from('expenses').select('amount, category')
         .eq('user_id', user.id).eq('month', month)
       const expenses = data ?? []
-      const total = expenses.reduce((s, e) => s + Number(e.amount), 0)
+      const total = expenses.reduce((s: number, e: { amount: unknown }) => s + Number(e.amount), 0)
       if (total === 0) return NextResponse.json({ reply: `No tenés gastos en ${monthLabel}.` })
 
       const byCategory: Record<string, number> = {}
@@ -83,6 +83,8 @@ export async function POST(req: NextRequest) {
   const isOwed = OWED_USER_EMAIL && user.email === OWED_USER_EMAIL
   const now = new Date(Date.now() - 3 * 60 * 60 * 1000)
   const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`
+
+  if (result.type !== 'expenses') return NextResponse.json({ reply: '❌ No pude entender el gasto.' })
 
   const allEntries: Record<string, unknown>[] = []
   for (const item of result.items) {
