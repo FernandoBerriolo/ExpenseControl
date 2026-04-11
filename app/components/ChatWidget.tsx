@@ -49,11 +49,11 @@ export default function ChatWidget({ onExpenseSaved }: { onExpenseSaved?: () => 
       <button
         onClick={() => setOpen(o => !o)}
         style={{
-          position: 'fixed', bottom: 96, right: 24, zIndex: 1000,
-          width: 56, height: 56, borderRadius: '50%',
+          position: 'fixed', bottom: 24, right: 100, zIndex: 1000,
+          width: 64, height: 64, borderRadius: '50%',
           background: 'linear-gradient(135deg, #10b981, #059669)',
           border: 'none', cursor: 'pointer', boxShadow: '0 4px 16px rgba(16,185,129,0.4)',
-          fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 26, display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
         title="Agregar gasto con IA"
       >
@@ -63,7 +63,7 @@ export default function ChatWidget({ onExpenseSaved }: { onExpenseSaved?: () => 
       {/* Panel del chat */}
       {open && (
         <div style={{
-          position: 'fixed', bottom: 92, right: 24, zIndex: 1000,
+          position: 'fixed', bottom: 100, right: 24, zIndex: 1000,
           width: 340, maxWidth: 'calc(100vw - 48px)',
           background: '#fff', borderRadius: 16,
           boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
