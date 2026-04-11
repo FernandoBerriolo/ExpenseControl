@@ -2,19 +2,15 @@
 import { useState, useRef, useEffect } from 'react'
 
 type Message = { role: 'user' | 'bot'; text: string; saved?: boolean }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyRecognition = any
 
 export default function ChatWidget({ onExpenseSaved }: { onExpenseSaved?: () => void }) {
-  const [open, setOpen]       = useState(false)
+  const [open, setOpen]         = useState(false)
   const [messages, setMessages] = useState<Message[]>([
     { role: 'bot', text: '¡Hola! Contame qué gastaste o preguntame sobre tus gastos 💬' }
   ])
-  const [input, setInput]     = useState('')
+  const [input, setInput]   = useState('')
   const [loading, setLoading] = useState(false)
-  const [listening, setListening] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const recognitionRef = useRef<AnyRecognition>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -42,33 +38,6 @@ export default function ChatWidget({ onExpenseSaved }: { onExpenseSaved?: () => 
     }
   }
 
-  function toggleVoice() {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = window as any
-    const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition
-    if (!SR) { alert('Tu navegador no soporta voz. Usá Chrome.'); return }
-
-    if (listening) {
-      recognitionRef.current?.stop()
-      setListening(false)
-      return
-    }
-
-    const rec = new SR()
-    rec.lang = 'es-UY'
-    rec.interimResults = false
-    rec.onresult = (e) => {
-      const transcript = e.results[0][0].transcript
-      setInput(transcript)
-      send(transcript)
-    }
-    rec.onend = () => setListening(false)
-    rec.onerror = () => setListening(false)
-    recognitionRef.current = rec
-    rec.start()
-    setListening(true)
-  }
-
   return (
     <>
       {/* Botón flotante */}
@@ -80,7 +49,6 @@ export default function ChatWidget({ onExpenseSaved }: { onExpenseSaved?: () => 
           background: 'linear-gradient(135deg, #10b981, #059669)',
           border: 'none', cursor: 'pointer', boxShadow: '0 4px 16px rgba(16,185,129,0.4)',
           fontSize: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transition: 'transform 0.2s',
         }}
         title="Agregar gasto con IA"
       >
@@ -146,18 +114,6 @@ export default function ChatWidget({ onExpenseSaved }: { onExpenseSaved?: () => 
                 background: loading ? '#f9fafb' : '#fff',
               }}
             />
-            <button
-              onClick={toggleVoice}
-              title={listening ? 'Detener' : 'Hablar'}
-              style={{
-                width: 36, height: 36, borderRadius: 8, border: 'none', cursor: 'pointer',
-                background: listening ? '#ef4444' : '#f3f4f6',
-                fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0,
-              }}
-            >
-              {listening ? '⏹' : '🎤'}
-            </button>
             <button
               onClick={() => send(input)}
               disabled={loading || !input.trim()}
