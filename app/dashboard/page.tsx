@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, type Expense, type Income, type SharedAccess, type Account, BANKS, CATEGORIES } from '@/lib/supabase'
+import ChatWidget from '@/app/components/ChatWidget'
 
 const MONTHS = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -1271,6 +1272,7 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+      <ChatWidget onExpenseSaved={loadExpenses} />
     </div>
   )
 }
