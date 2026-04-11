@@ -341,10 +341,16 @@ export default function Dashboard() {
     setWhatsappLoading(true)
     setWhatsappSaved(false)
     const phone = whatsappInput.trim()
-    const { error } = await supabase.from('phone_users')
-      .update({ whatsapp_phone: phone })
-      .eq('user_id', myUserId)
-    if (!error) { setMyWhatsapp(phone); setWhatsappSaved(true); setTimeout(() => setWhatsappSaved(false), 3000) }
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch('/api/save-whatsapp', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify({ phone }),
+    })
+    if (res.ok) { setMyWhatsapp(phone); setWhatsappSaved(true); setTimeout(() => setWhatsappSaved(false), 3000) }
     setWhatsappLoading(false)
   }
 
