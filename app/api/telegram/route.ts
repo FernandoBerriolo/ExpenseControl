@@ -35,6 +35,56 @@ type AIResult = ExpensesResult | QueryResult | null
 export async function POST(req: NextRequest) {
   const body = await req.json()
 
+  // ── Callback de botones inline ────────────────────────────────────────────
+  if (body.callback_query) {
+    const cb     = body.callback_query
+    const cbId   = cb.id
+    const chatId = String(cb.message.chat.id)
+    const action = cb.data as string
+
+    const { data: phoneUser } = await supabaseAdmin
+      .from('phone_users')
+      .select('user_id, last_expense_ids, pending_edit')
+      .eq('phone', chatId)
+      .single()
+
+    if (!phoneUser) {
+      await answerCallback(cbId, '❌ Cuenta no vinculada')
+      return NextResponse.json({ ok: true })
+    }
+
+    const ids: string[] = phoneUser.last_expense_ids ?? []
+
+    if (action === 'del_last') {
+      if (ids.length === 0) {
+        await answerCallback(cbId, 'No hay gasto reciente para eliminar')
+        return NextResponse.json({ ok: true })
+      }
+      await supabaseAdmin.from('expenses').delete().in('id', ids)
+      await supabaseAdmin.from('phone_users')
+        .update({ last_expense_ids: [] })
+        .eq('phone', chatId)
+      await answerCallback(cbId, '🗑️ Gasto eliminado')
+      await sendMessage(chatId, '🗑️ Gasto eliminado correctamente\\.', 'MarkdownV2')
+    }
+
+    if (action === 'edit_last') {
+      if (ids.length === 0) {
+        await answerCallback(cbId, 'No hay gasto reciente para editar')
+        return NextResponse.json({ ok: true })
+      }
+      await supabaseAdmin.from('expenses').delete().in('id', ids)
+      await supabaseAdmin.from('phone_users')
+        .update({ last_expense_ids: [], pending_edit: true })
+        .eq('phone', chatId)
+      await answerCallback(cbId, '✏️ Listo, mandá el gasto corregido')
+      await sendMessage(chatId, '✏️ Gasto anterior eliminado\\. Mandá el gasto corregido:', 'MarkdownV2')
+    }
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ── Mensaje normal ────────────────────────────────────────────────────────
   const message = body.message
   if (!message || (!message.text && !message.voice && !message.audio)) {
     return NextResponse.json({ ok: true })
@@ -83,7 +133,7 @@ export async function POST(req: NextRequest) {
   // Buscar usuario vinculado
   const { data: phoneUser } = await supabaseAdmin
     .from('phone_users')
-    .select('user_id')
+    .select('user_id, pending_edit')
     .eq('phone', chatId)
     .single()
 
@@ -93,6 +143,13 @@ export async function POST(req: NextRequest) {
       'MarkdownV2'
     )
     return NextResponse.json({ ok: true })
+  }
+
+  // Si hay edición pendiente, limpiar el flag (el gasto viejo ya fue borrado al presionar el botón)
+  if (phoneUser.pending_edit) {
+    await supabaseAdmin.from('phone_users')
+      .update({ pending_edit: false })
+      .eq('phone', chatId)
   }
 
   const result = await parseWithAI(text || null)
@@ -125,7 +182,7 @@ export async function POST(req: NextRequest) {
   const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(phoneUser.user_id)
   const isGuille = !!OWED_USER_EMAIL && authUser?.user?.email === OWED_USER_EMAIL
 
-  const allEntries = []
+  const allEntries: Record<string, unknown>[] = []
   for (const item of result.items) {
     let expenseDate: string
     if (item.date) {
@@ -158,11 +215,29 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const { error } = await supabaseAdmin.from('expenses').insert(allEntries)
+  const { data: inserted, error } = await supabaseAdmin
+    .from('expenses').insert(allEntries).select('id')
 
   if (error) {
     await sendMessage(chatId, '❌ Error al guardar\\. Intentá de nuevo\\.', 'MarkdownV2')
-  } else if (result.items.length === 1) {
+    return NextResponse.json({ ok: true })
+  }
+
+  // Guardar IDs para poder borrar/editar después
+  const savedIds = (inserted ?? []).map((r: { id: string }) => r.id)
+  await supabaseAdmin.from('phone_users')
+    .update({ last_expense_ids: savedIds })
+    .eq('phone', chatId)
+
+  // Botones de acción
+  const editButtons = {
+    inline_keyboard: [[
+      { text: '✏️ Editar', callback_data: 'edit_last' },
+      { text: '🗑️ Eliminar', callback_data: 'del_last' },
+    ]]
+  }
+
+  if (result.items.length === 1) {
     const item = result.items[0]
     const installments = item.installments && item.installments > 1 ? item.installments : 1
     const installmentAmount = Math.round((item.amount / installments) * 100) / 100
@@ -182,10 +257,10 @@ export async function POST(req: NextRequest) {
       `*${escapeMarkdown(item.description)}*\n` +
       `\\$ ${escapeMarkdown(item.amount.toLocaleString('es-UY'))}` +
       `${cuotasLine}${bankLine}${catLine}${dateLine}${owedLine}`,
-      'MarkdownV2'
+      'MarkdownV2',
+      editButtons
     )
   } else {
-    // Múltiples gastos
     const lines = result.items.map(item =>
       `• *${escapeMarkdown(item.description)}* \\$${escapeMarkdown(item.amount.toLocaleString('es-UY'))}` +
       (item.bank ? ` \\(${escapeMarkdown(item.bank)}\\)` : '')
@@ -193,7 +268,8 @@ export async function POST(req: NextRequest) {
     const total = result.items.reduce((s, i) => s + i.amount, 0)
     await sendMessage(chatId,
       `✅ *${result.items.length} gastos guardados*\n\n${lines}\n\n*Total: \\$${escapeMarkdown(total.toLocaleString('es-UY'))}*`,
-      'MarkdownV2'
+      'MarkdownV2',
+      editButtons
     )
   }
 
@@ -476,7 +552,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 }
 
 // ─── Telegram helpers ─────────────────────────────────────────────────────────
-async function sendMessage(chatId: string, text: string, parseMode?: string) {
+async function sendMessage(chatId: string, text: string, parseMode?: string, replyMarkup?: object) {
   try {
     await fetch(`${API_BASE}/sendMessage`, {
       method: 'POST',
@@ -484,11 +560,24 @@ async function sendMessage(chatId: string, text: string, parseMode?: string) {
       body: JSON.stringify({
         chat_id: chatId,
         text,
-        ...(parseMode ? { parse_mode: parseMode } : {}),
+        ...(parseMode    ? { parse_mode:    parseMode    } : {}),
+        ...(replyMarkup  ? { reply_markup:  replyMarkup  } : {}),
       }),
     })
   } catch {
     // No bloquear la respuesta si falla el reply
+  }
+}
+
+async function answerCallback(callbackQueryId: string, text?: string) {
+  try {
+    await fetch(`${API_BASE}/answerCallbackQuery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callback_query_id: callbackQueryId, text }),
+    })
+  } catch {
+    // ignorar
   }
 }
 
