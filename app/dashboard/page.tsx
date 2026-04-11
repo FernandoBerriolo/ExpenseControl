@@ -114,6 +114,7 @@ export default function Dashboard() {
 
   const [showHistory, setShowHistory] = useState(false)
   const [monthlyHistory, setMonthlyHistory] = useState<{ month: string; uyu: number; usd: number }[]>([])
+  const [showCategoryChart, setShowCategoryChart] = useState(true)
 
   const [modalMode, setModalMode] = useState<ModalMode>(null)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
@@ -657,61 +658,71 @@ export default function Dashboard() {
 
         {/* Category Chart */}
         {expenses.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm p-4">
-            <p className="text-sm font-semibold text-gray-700 mb-4">📊 Gastos por categoría</p>
+          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+            <button
+              className="w-full px-4 py-3.5 flex items-center justify-between"
+              onClick={() => setShowCategoryChart(!showCategoryChart)}
+            >
+              <span className="text-sm font-semibold text-gray-700">📊 Gastos por categoría</span>
+              <span className="text-gray-400 text-lg">{showCategoryChart ? '▲' : '▼'}</span>
+            </button>
 
-            {totalUYU > 0 && (
-              <div className="space-y-3">
-                {categoryData.filter(d => d.uyu > 0).map(d => (
-                  <div key={`uyu-${d.cat}`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-base">{d.emoji}</span>
-                        <span className="text-xs font-medium text-gray-600">{d.label}</span>
-                      </div>
-                      <span className="text-xs font-bold" style={{ color: '#667eea' }}>
-                        {formatMoney(d.uyu, 'UYU')}
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-100 rounded-full h-2">
-                      <div className="h-2 rounded-full transition-all"
-                        style={{
-                          width: `${(d.uyu / maxUYU) * 100}%`,
-                          background: 'linear-gradient(135deg, #667eea, #764ba2)'
-                        }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {totalUSD > 0 && (
-              <>
-                {totalUYU > 0 && <div className="my-4 border-t border-gray-100" />}
-                <p className="text-xs text-gray-400 font-medium mb-3">En dólares</p>
-                <div className="space-y-3">
-                  {categoryData.filter(d => d.usd > 0).map(d => (
-                    <div key={`usd-${d.cat}`}>
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-base">{d.emoji}</span>
-                          <span className="text-xs font-medium text-gray-600">{d.label}</span>
+            {showCategoryChart && (
+              <div className="px-4 pb-4">
+                {totalUYU > 0 && (
+                  <div className="space-y-3">
+                    {categoryData.filter(d => d.uyu > 0).map(d => (
+                      <div key={`uyu-${d.cat}`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-base">{d.emoji}</span>
+                            <span className="text-xs font-medium text-gray-600">{d.label}</span>
+                          </div>
+                          <span className="text-xs font-bold" style={{ color: '#667eea' }}>
+                            {formatMoney(d.uyu, 'UYU')}
+                          </span>
                         </div>
-                        <span className="text-xs font-bold" style={{ color: '#764ba2' }}>
-                          {formatMoney(d.usd, 'USD')}
-                        </span>
+                        <div className="w-full bg-gray-100 rounded-full h-2">
+                          <div className="h-2 rounded-full transition-all"
+                            style={{
+                              width: `${(d.uyu / maxUYU) * 100}%`,
+                              background: 'linear-gradient(135deg, #667eea, #764ba2)'
+                            }} />
+                        </div>
                       </div>
-                      <div className="w-full bg-gray-100 rounded-full h-2">
-                        <div className="h-2 rounded-full transition-all"
-                          style={{
-                            width: `${(d.usd / maxUSD) * 100}%`,
-                            background: 'linear-gradient(135deg, #764ba2, #a855f7)'
-                          }} />
-                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {totalUSD > 0 && (
+                  <>
+                    {totalUYU > 0 && <div className="my-4 border-t border-gray-100" />}
+                    <p className="text-xs text-gray-400 font-medium mb-3">En dólares</p>
+                    <div className="space-y-3">
+                      {categoryData.filter(d => d.usd > 0).map(d => (
+                        <div key={`usd-${d.cat}`}>
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-base">{d.emoji}</span>
+                              <span className="text-xs font-medium text-gray-600">{d.label}</span>
+                            </div>
+                            <span className="text-xs font-bold" style={{ color: '#764ba2' }}>
+                              {formatMoney(d.usd, 'USD')}
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-100 rounded-full h-2">
+                            <div className="h-2 rounded-full transition-all"
+                              style={{
+                                width: `${(d.usd / maxUSD) * 100}%`,
+                                background: 'linear-gradient(135deg, #764ba2, #a855f7)'
+                              }} />
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </>
+                  </>
+                )}
+              </div>
             )}
           </div>
         )}
