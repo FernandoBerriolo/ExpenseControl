@@ -73,12 +73,12 @@ export async function POST(req: NextRequest) {
         await answerCallback(cbId, 'No hay gasto reciente para editar')
         return NextResponse.json({ ok: true })
       }
-      await supabaseAdmin.from('expenses').delete().in('id', ids)
+      // NO borramos todavía — el gasto se reemplaza recién cuando llegue el mensaje corregido
       await supabaseAdmin.from('phone_users')
-        .update({ last_expense_ids: [], pending_edit: true })
+        .update({ pending_edit: true })
         .eq('phone', chatId)
-      await answerCallback(cbId, '✏️ Listo, mandá el gasto corregido')
-      await sendMessage(chatId, '✏️ Gasto anterior eliminado\\. Mandá el gasto corregido:', 'MarkdownV2')
+      await answerCallback(cbId, '✏️ Mandá el gasto corregido')
+      await sendMessage(chatId, '✏️ Mandá el gasto corregido y reemplazará al anterior:', 'MarkdownV2')
     }
 
     return NextResponse.json({ ok: true })
@@ -145,14 +145,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
-  // Si hay edición pendiente, limpiar el flag (el gasto viejo ya fue borrado al presionar el botón)
+  // Si hay edición pendiente, obtener el gasto original para pasarle contexto a Claude
+  let originalExpense: Record<string, unknown> | null = null
+  let pendingEditIds: string[] = []
   if (phoneUser.pending_edit) {
-    await supabaseAdmin.from('phone_users')
-      .update({ pending_edit: false })
+    const { data: sessionData } = await supabaseAdmin
+      .from('phone_users')
+      .select('last_expense_ids')
       .eq('phone', chatId)
+      .single()
+    pendingEditIds = sessionData?.last_expense_ids ?? []
+    if (pendingEditIds.length > 0) {
+      const { data: origData } = await supabaseAdmin
+        .from('expenses')
+        .select('description, amount, bank, category')
+        .eq('id', pendingEditIds[0])
+        .single()
+      if (origData) originalExpense = origData as Record<string, unknown>
+    }
   }
 
-  const result = await parseWithAI(text || null)
+  const result = await parseWithAI(text || null, originalExpense)
 
   if (!result) {
     await sendMessage(chatId,
@@ -223,10 +236,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
+  // Si era una edición, borrar el gasto original ahora que el nuevo está guardado
+  if (phoneUser.pending_edit && pendingEditIds.length > 0) {
+    await supabaseAdmin.from('expenses').delete().in('id', pendingEditIds)
+  }
+
   // Guardar IDs para poder borrar/editar después
   const savedIds = (inserted ?? []).map((r: { id: string }) => r.id)
   await supabaseAdmin.from('phone_users')
-    .update({ last_expense_ids: savedIds })
+    .update({ last_expense_ids: savedIds, pending_edit: false })
     .eq('phone', chatId)
 
   // Botones de acción
@@ -424,10 +442,60 @@ async function transcribeAudio(audioBase64: string, audioMime: string): Promise<
 }
 
 // ─── Parsing con Claude ───────────────────────────────────────────────────────
-async function parseWithAI(text: string | null): Promise<AIResult> {
+async function parseWithAI(text: string | null, originalExpense: Record<string, unknown> | null = null): Promise<AIResult> {
   const today = new Date(Date.now() - 3 * 60 * 60 * 1000)
   const todayStr = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`
   const monthStr = todayStr.slice(0, 7)
+
+  // Prompt especial para edición: aplicar corrección parcial al gasto original
+  if (originalExpense) {
+    const editPrompt = `El usuario tenía registrado este gasto:
+${JSON.stringify(originalExpense)}
+
+Ahora manda esta corrección: "${text}"
+
+Aplicá los cambios mencionados al gasto original y devolvé el gasto actualizado. Si solo menciona el monto, actualizá el monto. Si menciona otro lugar/descripción, actualizá description y category. Si no menciona algo, mantené el valor original.
+
+Respondé ÚNICAMENTE con este JSON, sin texto adicional:
+{
+  "type": "expenses",
+  "items": [{
+    "description": "...",
+    "amount": número,
+    "bank": "Itaú"|"BROU"|"Scotiabank"|null,
+    "category": "comida"|"nafta"|"ropa"|"hogar"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza"|null,
+    "installments": null,
+    "date": null
+  }]
+}`
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type':      'application/json',
+          'x-api-key':         ANTHROPIC_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model:      'claude-haiku-4-5-20251001',
+          max_tokens: 256,
+          messages:   [{ role: 'user', content: editPrompt }],
+        }),
+      })
+      const data = await res.json()
+      if (res.status !== 200) return null
+      const raw = data.content?.[0]?.text
+      if (!raw) return null
+      const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+      const parsed = JSON.parse(clean)
+      if (parsed.type === 'expenses' && Array.isArray(parsed.items) && parsed.items.length > 0) {
+        const i = parsed.items[0]
+        return { type: 'expenses', items: [{ description: i.description, amount: Number(i.amount), bank: i.bank ?? null, category: i.category ?? null, installments: null, date: null }] }
+      }
+      return null
+    } catch { return null }
+  }
 
   const systemPrompt = `Sos un asistente de gastos personales. Hoy es ${todayStr}.
 Tu tarea: determinar si el mensaje contiene GASTOS a registrar o una CONSULTA sobre gastos.
