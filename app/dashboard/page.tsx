@@ -132,11 +132,16 @@ export default function Dashboard() {
 
   // Share modal
   const [showShare, setShowShare] = useState(false)
-  const [shareTab, setShareTab] = useState<'mycode' | 'join' | 'telegram'>('mycode')
+  const [shareTab, setShareTab] = useState<'mycode' | 'join' | 'telegram' | 'whatsapp'>('mycode')
   const [myPhone, setMyPhone] = useState('')
   const [phoneInput, setPhoneInput] = useState('')
   const [phoneLoading, setPhoneLoading] = useState(false)
   const [phoneSaved, setPhoneSaved] = useState(false)
+
+  const [myWhatsapp, setMyWhatsapp] = useState('')
+  const [whatsappInput, setWhatsappInput] = useState('')
+  const [whatsappLoading, setWhatsappLoading] = useState(false)
+  const [whatsappSaved, setWhatsappSaved] = useState(false)
   const [myInviteCode, setMyInviteCode] = useState('')
   const [joinCode, setJoinCode] = useState('')
   const [joinLoading, setJoinLoading] = useState(false)
@@ -200,11 +205,14 @@ export default function Dashboard() {
 
       const { data: phoneData } = await supabase
         .from('phone_users')
-        .select('phone')
+        .select('phone, whatsapp_phone')
         .eq('user_id', uid)
         .single()
 
-      if (phoneData) { setMyPhone(phoneData.phone); setPhoneInput(phoneData.phone) }
+      if (phoneData) {
+        setMyPhone(phoneData.phone); setPhoneInput(phoneData.phone)
+        if (phoneData.whatsapp_phone) { setMyWhatsapp(phoneData.whatsapp_phone); setWhatsappInput(phoneData.whatsapp_phone) }
+      }
     })
   }, [router])
 
@@ -326,6 +334,19 @@ export default function Dashboard() {
     )
     if (!error) { setMyPhone(phone); setPhoneSaved(true); setTimeout(() => setPhoneSaved(false), 3000) }
     setPhoneLoading(false)
+  }
+
+  async function handleSaveWhatsapp() {
+    if (!whatsappInput.trim()) return
+    setWhatsappLoading(true)
+    setWhatsappSaved(false)
+    const phone = whatsappInput.trim()
+    const { error } = await supabase.from('phone_users').upsert(
+      { whatsapp_phone: phone, user_id: myUserId },
+      { onConflict: 'user_id' }
+    )
+    if (!error) { setMyWhatsapp(phone); setWhatsappSaved(true); setTimeout(() => setWhatsappSaved(false), 3000) }
+    setWhatsappLoading(false)
   }
 
   // --- Income ---
@@ -1276,6 +1297,13 @@ export default function Dashboard() {
                   : { background: 'white', color: '#6b7280' }}>
                 ✈️ Telegram
               </button>
+              <button onClick={() => setShareTab('whatsapp')}
+                className="flex-1 py-2.5 text-xs font-semibold"
+                style={shareTab === 'whatsapp'
+                  ? { background: 'linear-gradient(135deg, #25d366 0%, #128c7e 100%)', color: 'white' }
+                  : { background: 'white', color: '#6b7280' }}>
+                💬 WhatsApp
+              </button>
             </div>
 
             {shareTab === 'mycode' && (
@@ -1380,6 +1408,53 @@ export default function Dashboard() {
                         Guardando...
                       </span>
                     : 'Guardar ID'}
+                </button>
+              </div>
+            )}
+
+            {shareTab === 'whatsapp' && (
+              <div className="space-y-4">
+                <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534' }}>
+                  <p className="font-semibold mb-1.5">Cómo vincular tu cuenta:</p>
+                  <p>1. Activá el sandbox enviando el mensaje de Twilio a su número de WhatsApp</p>
+                  <p>2. Ingresá tu número abajo con código de país (ej: +59812345678)</p>
+                  <p>3. ¡Listo! Ya podés mandar gastos por WhatsApp</p>
+                </div>
+                <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af' }}>
+                  <p className="font-semibold">Comandos disponibles:</p>
+                  <p className="font-mono">"pizza 350 itau"</p>
+                  <p className="font-mono">"cuánto gasté en abril"</p>
+                  <p className="font-mono">Respondé <strong>editar</strong> o <strong>borrar</strong> al último gasto</p>
+                </div>
+                {myWhatsapp && (
+                  <div className="rounded-xl px-4 py-2.5 text-sm flex items-center gap-2" style={{ background: '#f0fdf4', color: '#166534' }}>
+                    <span>✓</span> Vinculado: <span className="font-mono font-semibold">{myWhatsapp}</span>
+                  </div>
+                )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1.5">Tu número de WhatsApp</label>
+                  <input
+                    type="tel"
+                    value={whatsappInput}
+                    onChange={e => setWhatsappInput(e.target.value)}
+                    placeholder="Ej: +59812345678"
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 text-gray-800 placeholder-gray-400 font-mono text-lg tracking-wider"
+                  />
+                </div>
+                {whatsappSaved && (
+                  <div className="bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-3 rounded-xl">
+                    ✓ Número guardado correctamente
+                  </div>
+                )}
+                <button onClick={handleSaveWhatsapp} disabled={whatsappLoading || !whatsappInput.trim()}
+                  className="w-full py-3 rounded-xl font-semibold text-white disabled:opacity-50"
+                  style={{ background: 'linear-gradient(135deg, #25d366 0%, #128c7e 100%)' }}>
+                  {whatsappLoading
+                    ? <span className="flex items-center justify-center gap-2">
+                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Guardando...
+                      </span>
+                    : 'Guardar número'}
                 </button>
               </div>
             )}
