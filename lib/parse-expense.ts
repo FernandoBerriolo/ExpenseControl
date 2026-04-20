@@ -162,6 +162,7 @@ export async function analyzeReceiptImage(
   base64: string,
   mimeType: string,
   cards: string[] = [],
+  defaultCurrency: 'UYU' | 'USD' | 'EUR' = 'UYU',
 ): Promise<ParseResult> {
   const cardOptions = cards.length > 0 ? cards.map(c => `"${c}"`).join(' | ') + ' | null' : 'null'
   const prompt = `Analizá esta imagen de un ticket, factura o recibo.
@@ -221,7 +222,7 @@ Tarjetas disponibles: ${cards.join(', ') || 'ninguna'}`
       .map(i => ({
         description:  i.description ?? 'Gasto',
         amount:       Number(i.amount),
-        currency:     normalizeCurrency(i.currency),
+        currency:     normalizeCurrency(i.currency, defaultCurrency),
         bank:         normalizeBank(i.bank, cards),
         category:     i.category ?? null,
         installments: null,
