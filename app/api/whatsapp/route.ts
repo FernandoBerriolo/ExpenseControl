@@ -281,7 +281,7 @@ async function parseWithAI(text: string, originalExpense: Record<string, unknown
       const parsed = JSON.parse(clean)
       if (parsed.type === 'expenses' && Array.isArray(parsed.items) && parsed.items.length > 0) {
         const i = parsed.items[0]
-        return { type: 'expenses', items: [{ description: i.description, amount: Number(i.amount), bank: i.bank ?? null, category: i.category ?? null, installments: null, date: null }] }
+        return { type: 'expenses', items: [{ description: i.description, amount: Number(i.amount), currency: i.currency === 'USD' ? 'USD' : 'UYU', bank: i.bank ?? null, category: i.category ?? null, installments: null, date: null }] }
       }
       return null
     } catch { return null }
