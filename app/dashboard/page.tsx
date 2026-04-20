@@ -183,6 +183,12 @@ export default function Dashboard() {
     return Object.keys(map).length > 0 ? map : DEFAULT_CLOSING_DAYS
   }, [paymentMethods])
 
+  const isFormBankCredit = useMemo(() => {
+    if (!formBank) return false
+    const method = paymentMethods.find(pm => pm.name === formBank)
+    return method?.type === 'credit'
+  }, [formBank, paymentMethods])
+
   const billingMonth = useMemo(() => {
     if (!formDate) return selectedMonth
     if (formBank && closingDaysMap[formBank]) {
@@ -1124,7 +1130,7 @@ export default function Dashboard() {
               )}
 
               {/* Cuotas */}
-              {formBank && modalMode === 'add' && (
+              {formBank && isFormBankCredit && modalMode === 'add' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-600 mb-1.5">Cuotas</label>
                   <div className="flex gap-2 flex-wrap">

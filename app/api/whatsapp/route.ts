@@ -5,8 +5,12 @@ import { analyzeReceiptImage } from '@/lib/parse-expense'
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID!
 const TWILIO_AUTH_TOKEN  = process.env.TWILIO_AUTH_TOKEN!
 const ANTHROPIC_KEY      = process.env.ANTHROPIC_API_KEY!
-const GEMINI_KEY         = process.env.GEMINI_API_KEY!
+const GEMINI_KEY         = process.env.GEMINI_API_KEY
 const OWED_USER_EMAIL    = process.env.OWED_USER_EMAIL ?? ''
+
+if (!GEMINI_KEY) {
+  console.warn('⚠️ ADVERTENCIA: GEMINI_API_KEY no está configurada. Los audios no se podrán transcribir.')
+}
 
 const CATEGORY_LABELS: Record<string, string> = {
   comida: '🍔 Comida', nafta: '⛽ Nafta', ropa: '👕 Ropa', hogar: '🏠 Hogar',
@@ -43,16 +47,18 @@ export async function POST(req: NextRequest) {
     .eq('whatsapp_phone', from)
     .single()
 
-  // Hola / start → instrucciones
+  // Hola / start → instrucciones (solo si NO hay multimedia)
   const lower = body.toLowerCase().trim()
-  if (!body || lower === 'hola' || lower === 'start' || lower === '/start') {
+  if ((!body && !mediaUrl) || lower === 'hola' || lower === 'start' || lower === '/start') {
     if (!phoneUser) {
       return twiml(
         '👋 Hola! Soy tu asistente de gastos.\n\n' +
-        'Para vincular tu cuenta, abrí la app y en el botón 🔗 elegí la pestaña *WhatsApp*. ' +
-        'Ingresá tu número con código de país (ej: +59812345678) y guardalo.\n\n' +
-        'Después podés registrar gastos:\n"pizza 350 itau"\n"gasté 1200 en ropa con brou"\n"celular 30000 en 6 cuotas"\n\n' +
-        'O consultar:\n"cuánto gasté en abril"\n"cuánto gasté en comida este mes"'
+        '📝 *Pasos para vincular tu cuenta:*\n\n' +
+        '1️⃣ Agendá este número con nombre *"Mis gastos"*:\n+1 (415) 523-8886\n\n' +
+        '2️⃣ Mandá este mensaje:\njoin silver-equipment\n\n' +
+        '3️⃣ Abrí la app y en el botón 🔗 elegí la pestaña *WhatsApp*. Ingresá tu número con código de país (ej: +59812345678) y guardalo.\n\n' +
+        '✨ *Después podés registrar gastos:*\n"pizza 350 itau"\n"gasté 1200 en ropa con brou"\n"celular 30000 en 6 cuotas"\n\n' +
+        '📊 *O consultar:*\n"cuánto gasté en abril"\n"cuánto gasté en comida este mes"'
       )
     }
     return twiml(
@@ -372,18 +378,25 @@ Si ahorró o guardó dinero: {"type":"savings","description":"Ahorro"|descripci�
 
 // ─── Audio: descargar desde Twilio y transcribir con Gemini ──────────────────
 async function transcribeAudio(url: string, mimeType: string): Promise<string | null> {
+  if (!GEMINI_KEY) {
+    console.warn('⚠️ GEMINI_API_KEY no está configurada')
+    return null
+  }
   try {
     const res = await fetch(url, {
       headers: { 'Authorization': 'Basic ' + btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`) }
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      console.warn('⚠️ Error descargando audio:', res.status)
+      return null
+    }
     const buffer = await res.arrayBuffer()
     const bytes  = new Uint8Array(buffer)
     let binary   = ''
     bytes.forEach(b => { binary += String.fromCharCode(b) })
     const base64 = btoa(binary)
     const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -396,9 +409,21 @@ async function transcribeAudio(url: string, mimeType: string): Promise<string | 
         }),
       }
     )
+    if (!geminiRes.ok) {
+      console.warn('⚠️ Error Gemini transcribiendo audio:', geminiRes.status)
+      return null
+    }
     const gdata = await geminiRes.json()
-    return gdata.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null
-  } catch { return null }
+    const text = gdata.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
+    if (!text) {
+      console.warn('⚠️ Respuesta vacía de Gemini para audio')
+      return null
+    }
+    return text
+  } catch (e) {
+    console.error('❌ Error transcribiendo audio:', e)
+    return null
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

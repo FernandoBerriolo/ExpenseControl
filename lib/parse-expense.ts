@@ -162,12 +162,14 @@ export async function analyzeReceiptImage(
 ): Promise<ParseResult> {
   const cardOptions = cards.length > 0 ? cards.map(c => `"${c}"`).join(' | ') + ' | null' : 'null'
   const prompt = `Analizá esta imagen de un ticket, factura o recibo.
-Identificá todos los gastos y devolvé ÚNICAMENTE este JSON (sin markdown, sin texto extra):
+Si hay un "monto total", "total" o similar, extrae SOLO ese monto como UN ÚNICO gasto.
+NO incluyas los items individuales, solo el total.
+Devolvé ÚNICAMENTE este JSON (sin markdown, sin texto extra):
 {
   "type": "expenses",
   "items": [{
     "description": "nombre corto del gasto (2-4 palabras)",
-    "amount": número total,
+    "amount": monto total del recibo,
     "currency": "UYU" | "USD" | "EUR",
     "bank": ${cardOptions},
     "category": "comida"|"nafta"|"ropa"|"hogar"|"alquiler"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza"|null,
@@ -175,7 +177,7 @@ Identificá todos los gastos y devolvé ÚNICAMENTE este JSON (sin markdown, sin
     "date": "YYYY-MM-DD" si se ve la fecha, si no null
   }]
 }
-Si no se pueden identificar gastos claros en la imagen, devolvé: {"error":"no_expense"}
+Si no hay monto total identificable, devolvé: {"error":"no_total"}
 Tarjetas disponibles: ${cards.join(', ') || 'ninguna'}`
 
   try {
