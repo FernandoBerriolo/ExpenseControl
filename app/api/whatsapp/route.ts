@@ -395,53 +395,79 @@ async function transcribeAudio(url: string, mimeType: string): Promise<string | 
     console.warn('⚠️ GEMINI_API_KEY no está configurada')
     return null
   }
-  try {
-    const res = await fetch(url, {
-      headers: { 'Authorization': 'Basic ' + btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`) }
-    })
-    if (!res.ok) {
-      console.warn('⚠️ Error descargando audio:', res.status)
-      return null
-    }
-    const buffer = await res.arrayBuffer()
-    const bytes  = new Uint8Array(buffer)
-    let binary   = ''
-    bytes.forEach(b => { binary += String.fromCharCode(b) })
-    const base64 = btoa(binary)
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [
-            { inlineData: { mimeType, data: base64 } },
-            { text: 'Transcribí este mensaje de voz al español exactamente como se dice. Devolvé solo el texto transcripto, sin explicaciones ni comillas.' },
-          ]}],
-          generationConfig: {
-            temperature: 0.0,
-            topP: 0.95,
-            topK: 40,
-            maxOutputTokens: 1000,
-          },
-        }),
+  
+  let retries = 0
+  const maxRetries = 3
+  const baseDelay = 1000 // 1 segundo
+  
+  while (retries < maxRetries) {
+    try {
+      const res = await fetch(url, {
+        headers: { 'Authorization': 'Basic ' + btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`) }
+      })
+      if (!res.ok) {
+        console.warn('⚠️ Error descargando audio:', res.status)
+        return null
       }
-    )
-    if (!geminiRes.ok) {
-      console.warn('⚠️ Error Gemini transcribiendo audio:', geminiRes.status)
+      const buffer = await res.arrayBuffer()
+      const bytes  = new Uint8Array(buffer)
+      let binary   = ''
+      bytes.forEach(b => { binary += String.fromCharCode(b) })
+      const base64 = btoa(binary)
+      
+      const geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [
+              { inlineData: { mimeType, data: base64 } },
+              { text: 'Transcribí este mensaje de voz al español exactamente como se dice. Devolvé solo el texto transcripto, sin explicaciones ni comillas.' },
+            ]}],
+            generationConfig: {
+              temperature: 0.0,
+              topP: 0.95,
+              topK: 40,
+              maxOutputTokens: 1000,
+            },
+          }),
+        }
+      )
+      
+      if (geminiRes.status === 429) {
+        retries++
+        if (retries < maxRetries) {
+          const delay = baseDelay * Math.pow(2, retries - 1)
+          console.warn(`⚠️ Rate limit (429). Reintento ${retries}/${maxRetries} en ${delay}ms`)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          continue
+        } else {
+          console.error('❌ Error Gemini: rate limit después de 3 reintentos')
+          return null
+        }
+      }
+      
+      if (!geminiRes.ok) {
+        console.warn('⚠️ Error Gemini transcribiendo audio:', geminiRes.status)
+        return null
+      }
+      
+      const gdata = await geminiRes.json()
+      const text = gdata.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
+      if (!text) {
+        console.warn('⚠️ Respuesta vacía de Gemini para audio')
+        return null
+      }
+      return text
+      
+    } catch (e) {
+      console.error('❌ Error transcribiendo audio:', e)
       return null
     }
-    const gdata = await geminiRes.json()
-    const text = gdata.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
-    if (!text) {
-      console.warn('⚠️ Respuesta vacía de Gemini para audio')
-      return null
-    }
-    return text
-  } catch (e) {
-    console.error('❌ Error transcribiendo audio:', e)
-    return null
   }
+  
+  return null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
