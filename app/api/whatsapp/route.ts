@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { analyzeReceiptImage } from '@/lib/parse-expense'
+import { analyzeReceiptImage, parseExpenseMessage } from '@/lib/parse-expense'
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID!
 const TWILIO_AUTH_TOKEN  = process.env.TWILIO_AUTH_TOKEN!

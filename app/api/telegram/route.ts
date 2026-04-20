@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { analyzeReceiptImage } from '@/lib/parse-expense'
+import { analyzeReceiptImage, parseExpenseMessage } from '@/lib/parse-expense'
 
 const BOT_TOKEN        = process.env.TELEGRAM_BOT_TOKEN!
 const GEMINI_KEY       = process.env.GEMINI_API_KEY!
