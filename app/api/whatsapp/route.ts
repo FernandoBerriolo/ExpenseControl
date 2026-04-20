@@ -151,6 +151,8 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Guardar gastos ─────────────────────────────────────────────────────────
+  if (result.type !== 'expenses') return twiml('')
+
   const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(phoneUser.user_id)
   const isOwed = !!OWED_USER_EMAIL && authUser?.user?.email === OWED_USER_EMAIL
 

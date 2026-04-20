@@ -227,6 +227,8 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Guardar gastos ────────────────────────────────────────────────────────
+  if (result.type !== 'expenses') return NextResponse.json({ ok: true })
+
   const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(phoneUser.user_id)
   const isGuille = !!OWED_USER_EMAIL && authUser?.user?.email === OWED_USER_EMAIL
 
