@@ -53,12 +53,19 @@ export async function POST(req: NextRequest) {
     if (!phoneUser) {
       return twiml(
         '👋 Hola! Soy tu asistente de gastos.\n\n' +
-        '📝 *Pasos para vincular tu cuenta:*\n\n' +
-        '1️⃣ Agendá este número con nombre *"Mis gastos"*:\n+1 (415) 523-8886\n\n' +
-        '2️⃣ Mandá este mensaje:\njoin silver-equipment\n\n' +
-        '3️⃣ Abrí la app y en el botón 🔗 elegí la pestaña *WhatsApp*. Ingresá tu número con código de país (ej: +59812345678) y guardalo.\n\n' +
-        '✨ *Después podés registrar gastos:*\n"pizza 350 itau"\n"gasté 1200 en ropa con brou"\n"celular 30000 en 6 cuotas"\n\n' +
-        '📊 *O consultar:*\n"cuánto gasté en abril"\n"cuánto gasté en comida este mes"'
+        '📝 *PASOS PARA VINCULAR TU CUENTA:*\n\n' +
+        '*Paso 1️⃣* - Agendá este número en tu teléfono con nombre *"Mis gastos"*\n\n' +
+        '+1 (415) 523-8886\n\n' +
+        '*Paso 2️⃣* - Mandá este mensaje a este número\n\n' +
+        'join silver-equipment\n\n' +
+        '*Paso 3️⃣* - Abrí la app *Expense Control*, tocá el botón 🔗, ve a *WhatsApp* e ingresá tu número con código de país (ej: +59812345678) y guardalo\n\n' +
+        '✨ *Después podés registrar gastos:*\n' +
+        '"pizza 350 itau"\n' +
+        '"gasté 1200 en ropa con brou"\n' +
+        '"celular 30000 en 6 cuotas"\n\n' +
+        '📊 *O consultar:*\n' +
+        '"cuánto gasté en abril"\n' +
+        '"cuánto gasté en comida este mes"'
       )
     }
     return twiml(

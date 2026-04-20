@@ -1532,16 +1532,18 @@ export default function Dashboard() {
             {shareTab === 'whatsapp' && (
               <div className="space-y-4">
                 <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534' }}>
-                  <p className="font-semibold mb-1.5">Cómo vincular tu cuenta:</p>
-                  <p>1. Activá el sandbox enviando el mensaje de Twilio a su número de WhatsApp</p>
-                  <p>2. Ingresá tu número abajo con código de país (ej: +59812345678)</p>
-                  <p>3. ¡Listo! Ya podés mandar gastos por WhatsApp</p>
+                  <p className="font-semibold mb-1.5">Cómo vincular tu cuenta (3 pasos):</p>
+                  <p><strong>Paso 1:</strong> Agendá este número con nombre "Mis gastos"</p>
+                  <p className="font-mono font-bold">+1 (415) 523-8886</p>
+                  <p><strong>Paso 2:</strong> Mandá este mensaje a ese número</p>
+                  <p className="font-mono font-bold">join silver-equipment</p>
+                  <p><strong>Paso 3:</strong> Ingresá tu número abajo con código de país (ej: +59812345678)</p>
                 </div>
                 <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af' }}>
-                  <p className="font-semibold">Comandos disponibles:</p>
+                  <p className="font-semibold">Ejemplos de gastos:</p>
                   <p className="font-mono">"pizza 350 itau"</p>
-                  <p className="font-mono">"cuánto gasté en abril"</p>
-                  <p className="font-mono">Respondé <strong>editar</strong> o <strong>borrar</strong> al último gasto</p>
+                  <p className="font-mono">"gasté 1200 en ropa"</p>
+                  <p className="font-mono">"celular 30000 en 6 cuotas"</p>
                 </div>
                 {myWhatsapp && (
                   <div className="rounded-xl px-4 py-2.5 text-sm flex items-center gap-2" style={{ background: '#f0fdf4', color: '#166534' }}>
