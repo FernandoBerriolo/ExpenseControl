@@ -19,6 +19,7 @@ export default function OnboardingSetup({
 }) {
   const [step, setStep] = useState<1 | 2>(1)
   const [currencies, setCurrencies] = useState<Currency[]>(['UYU'])
+  const [defaultCurrency, setDefaultCurrency] = useState<Currency>('UYU')
   const [cards, setCards] = useState<NewCard[]>([])
   const [cardName, setCardName] = useState('')
   const [cardType, setCardType] = useState<'credit' | 'debit'>('credit')
@@ -27,11 +28,16 @@ export default function OnboardingSetup({
   const [error, setError] = useState('')
 
   function toggleCurrency(c: Currency) {
-    setCurrencies(prev =>
-      prev.includes(c)
-        ? prev.length > 1 ? prev.filter(x => x !== c) : prev  // al menos 1
+    setCurrencies(prev => {
+      const newCurrencies = prev.includes(c)
+        ? prev.length > 1 ? prev.filter(x => x !== c) : prev
         : [...prev, c]
-    )
+      // Si deseleccionas la moneda por defecto, cambia a la primera disponible
+      if (!newCurrencies.includes(defaultCurrency)) {
+        setDefaultCurrency(newCurrencies[0])
+      }
+      return newCurrencies
+    })
   }
 
   function addCard() {
@@ -53,10 +59,11 @@ export default function OnboardingSetup({
     setError('')
     try {
       const { error: settingsErr } = await supabase.from('user_settings').upsert({
-        user_id:         userId,
+        user_id:           userId,
         currencies,
-        is_legacy:       false,
-        setup_completed: true,
+        default_currency:  defaultCurrency,
+        is_legacy:         false,
+        setup_completed:   true,
       })
       if (settingsErr) throw settingsErr
 
@@ -74,6 +81,9 @@ export default function OnboardingSetup({
         })
       })
 
+      // Delete old payment methods first to avoid duplicates
+      await supabase.from('payment_methods').delete().eq('user_id', userId)
+      
       const { data: savedMethods, error: pmErr } = await supabase
         .from('payment_methods')
         .insert(methods)
@@ -141,6 +151,22 @@ export default function OnboardingSetup({
                   </div>
                 </button>
               ))}
+
+              {/* Moneda por defecto */}
+              <div className="mt-5 pt-4 border-t border-gray-200">
+                <p className="text-sm text-gray-600 font-medium mb-2">Moneda por defecto</p>
+                <select
+                  value={defaultCurrency}
+                  onChange={(e) => setDefaultCurrency(e.target.value as Currency)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-800 bg-white">
+                  {currencies.map(c => {
+                    const opt = CURRENCY_OPTIONS.find(o => o.value === c)
+                    return <option key={c} value={c}>{opt?.emoji} {opt?.label}</option>
+                  })}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">Se usará cuando no especifiques moneda en un gasto</p>
+              </div>
+
               <button
                 onClick={() => setStep(2)}
                 disabled={currencies.length === 0}

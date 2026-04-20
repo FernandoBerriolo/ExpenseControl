@@ -168,12 +168,13 @@ export async function POST(req: NextRequest) {
   // Fetch payment methods and user settings
   const [pmRes, settingsRes] = await Promise.all([
     supabaseAdmin.from('payment_methods').select('name, type').eq('user_id', phoneUser.user_id).order('sort_order'),
-    supabaseAdmin.from('user_settings').select('is_legacy').eq('user_id', phoneUser.user_id).single(),
+    supabaseAdmin.from('user_settings').select('is_legacy, default_currency').eq('user_id', phoneUser.user_id).single(),
   ])
   const userCards: string[] = ((pmRes.data ?? []) as { name: string; type: string }[])
     .filter(m => m.type !== 'cash')
     .map(m => m.name)
   const isLegacyUser = (settingsRes.data as { is_legacy: boolean } | null)?.is_legacy ?? true
+  const defaultCurrency = (settingsRes.data as { default_currency?: string } | null)?.default_currency as 'UYU' | 'USD' | 'EUR' ?? 'UYU'
 
   // Si hay edición pendiente, obtener el gasto original para pasarle contexto a Claude
   let originalExpense: Record<string, unknown> | null = null
@@ -198,10 +199,10 @@ export async function POST(req: NextRequest) {
   // Photo takes priority over text
   let result: AIResult
   if (photoData) {
-    const parsed = await analyzeReceiptImage(photoData.base64, photoData.mime, userCards)
+    const parsed = await analyzeReceiptImage(photoData.base64, photoData.mime, userCards, defaultCurrency)
     result = parsed
   } else {
-    result = await parseWithAI(text || null, originalExpense, userCards)
+    result = await parseWithAI(text || null, originalExpense, userCards, defaultCurrency)
   }
 
   if (!result) {
@@ -520,13 +521,11 @@ async function transcribeAudio(audioBase64: string, audioMime: string): Promise<
 }
 
 // ─── Parsing con Claude ───────────────────────────────────────────────────────
-async function parseWithAI(text: string | null, originalExpense: Record<string, unknown> | null = null, cards: string[] = ['Itaú', 'BROU', 'Scotiabank']): Promise<AIResult> {
-  const today = new Date(Date.now() - 3 * 60 * 60 * 1000)
-  const todayStr = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`
-  const monthStr = todayStr.slice(0, 7)
-
-  // Prompt especial para edición: aplicar corrección parcial al gasto original
-  if (originalExpense) {
+async function parseWithAI(text: string | null, originalExpense: Record<string, unknown> | null = null, cards: string[] = ['Itaú', 'BROU', 'Scotiabank'], defaultCurrency: 'UYU' | 'USD' | 'EUR' = 'UYU'): Promise<AIResult> {
+  if (!text) return null
+  
+  const result = await parseExpenseMessage(text, cards, defaultCurrency)
+  if (result) return result
     const editPrompt = `El usuario tenía registrado este gasto:
 ${JSON.stringify(originalExpense)}
 

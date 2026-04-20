@@ -37,6 +37,7 @@ export type Income = {
 export type UserSettings = {
   user_id: string
   currencies: Currency[]
+  default_currency: Currency
   is_legacy: boolean
   setup_completed: boolean
   created_at: string

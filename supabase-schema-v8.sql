@@ -9,11 +9,12 @@ ALTER TABLE incomes ADD CONSTRAINT incomes_currency_check CHECK (currency IN ('U
 
 -- 2. User settings table
 CREATE TABLE IF NOT EXISTS user_settings (
-  user_id        UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  currencies     TEXT[] NOT NULL DEFAULT ARRAY['UYU', 'USD'],
-  is_legacy      BOOLEAN NOT NULL DEFAULT FALSE,
-  setup_completed BOOLEAN NOT NULL DEFAULT FALSE,
-  created_at     TIMESTAMPTZ DEFAULT NOW()
+  user_id           UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  currencies        TEXT[] NOT NULL DEFAULT ARRAY['UYU', 'USD'],
+  default_currency  TEXT NOT NULL DEFAULT 'UYU' CHECK (default_currency IN ('UYU', 'USD', 'EUR')),
+  is_legacy         BOOLEAN NOT NULL DEFAULT FALSE,
+  setup_completed   BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at        TIMESTAMPTZ DEFAULT NOW()
 );
 
 ALTER TABLE user_settings ENABLE ROW LEVEL SECURITY;
@@ -38,8 +39,8 @@ CREATE POLICY "Users manage own payment methods" ON payment_methods
 CREATE INDEX IF NOT EXISTS payment_methods_user_idx ON payment_methods(user_id);
 
 -- 4. Mark ALL existing users as legacy (they keep their current setup)
-INSERT INTO user_settings (user_id, currencies, is_legacy, setup_completed)
-SELECT id, ARRAY['UYU', 'USD'], TRUE, TRUE
+INSERT INTO user_settings (user_id, currencies, default_currency, is_legacy, setup_completed)
+SELECT id, ARRAY['UYU', 'USD'], 'UYU', TRUE, TRUE
 FROM auth.users
 ON CONFLICT (user_id) DO NOTHING;
 

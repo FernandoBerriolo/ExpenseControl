@@ -28,6 +28,7 @@ export type ParseResult = ParsedExpenses | ParsedQuery | ParsedEntry | null
 export async function parseExpenseMessage(
   text: string,
   cards: string[] = ['Itaú', 'BROU', 'Scotiabank'],
+  defaultCurrency: 'UYU' | 'USD' | 'EUR' = 'UYU',
 ): Promise<ParseResult> {
   const today = new Date(Date.now() - 3 * 60 * 60 * 1000)
   const todayStr = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`
@@ -37,6 +38,8 @@ export async function parseExpenseMessage(
 
   const systemPrompt = `Sos un asistente de gastos personales. Hoy es ${todayStr}.
 Tu tarea: determinar si el mensaje contiene GASTOS, INGRESOS, AHORROS o una CONSULTA.
+
+IMPORTANTE: Si el usuario NO especifica la moneda, usá por defecto: "${defaultCurrency}"
 
 ═══ GASTOS ═══
 Si hay uno o más gastos, respondé con este JSON (SIEMPRE con "items" como array):
@@ -141,7 +144,7 @@ Si el mensaje indica que ahorró o guardó dinero:
       .map(i => ({
         description:  i.description ?? 'Gasto',
         amount:       Number(i.amount),
-        currency:     normalizeCurrency(i.currency),
+        currency:     normalizeCurrency(i.currency, defaultCurrency),
         bank:         normalizeBank(i.bank, cards),
         category:     i.category ?? null,
         installments: i.installments ? Number(i.installments) : null,
@@ -232,10 +235,11 @@ Tarjetas disponibles: ${cards.join(', ') || 'ninguna'}`
   }
 }
 
-function normalizeCurrency(c: string | undefined | null): 'UYU' | 'USD' | 'EUR' {
+function normalizeCurrency(c: string | undefined | null, defaultCurrency: 'UYU' | 'USD' | 'EUR' = 'UYU'): 'UYU' | 'USD' | 'EUR' {
   if (c === 'USD') return 'USD'
   if (c === 'EUR') return 'EUR'
-  return 'UYU'
+  if (c === 'UYU') return 'UYU'
+  return defaultCurrency
 }
 
 function normalizeBank(bank: string | null | undefined, validCards: string[]): string | null {

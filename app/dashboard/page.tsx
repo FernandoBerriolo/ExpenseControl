@@ -569,34 +569,36 @@ export default function Dashboard() {
 
   // Expenses grouped by category
   const expensesByCategory = useMemo(() => {
-    const groups: Record<string, { expenses: Expense[]; uyu: number; usd: number }> = {}
+    const groups: Record<string, { expenses: Expense[]; uyu: number; usd: number; eur: number }> = {}
     for (const e of expenses) {
       const key = e.category || '__sin__'
-      if (!groups[key]) groups[key] = { expenses: [], uyu: 0, usd: 0 }
+      if (!groups[key]) groups[key] = { expenses: [], uyu: 0, usd: 0, eur: 0 }
       groups[key].expenses.push(e)
       if (e.currency === 'UYU') groups[key].uyu += e.amount
-      else groups[key].usd += e.amount
+      else if (e.currency === 'USD') groups[key].usd += e.amount
+      else if (e.currency === 'EUR') groups[key].eur += e.amount
     }
     return Object.entries(groups)
       .map(([cat, data]) => {
         const info = getCategoryInfo(cat)
         return { cat, label: info?.label ?? 'Sin categoría', emoji: info?.emoji ?? '📦', ...data }
       })
-      .sort((a, b) => (b.uyu + b.usd) - (a.uyu + a.usd))
+      .sort((a, b) => (b.uyu + b.usd + b.eur) - (a.uyu + a.usd + a.eur))
   }, [expenses])
 
   // Bank/cash breakdown
   const bankBreakdown = useMemo(() => {
-    const map: Record<string, { uyu: number; usd: number }> = {}
+    const map: Record<string, { uyu: number; usd: number; eur: number }> = {}
     for (const e of expenses) {
       const key = e.bank ?? '__cash__'
-      if (!map[key]) map[key] = { uyu: 0, usd: 0 }
+      if (!map[key]) map[key] = { uyu: 0, usd: 0, eur: 0 }
       if (e.currency === 'UYU') map[key].uyu += e.amount
-      else map[key].usd += e.amount
+      else if (e.currency === 'USD') map[key].usd += e.amount
+      else if (e.currency === 'EUR') map[key].eur += e.amount
     }
     return Object.entries(map)
-      .filter(([, v]) => v.uyu > 0 || v.usd > 0)
-      .sort((a, b) => (b[1].uyu + b[1].usd) - (a[1].uyu + a[1].usd))
+      .filter(([, v]) => v.uyu > 0 || v.usd > 0 || v.eur > 0)
+      .sort((a, b) => (b[1].uyu + b[1].usd + b[1].eur) - (a[1].uyu + a[1].usd + a[1].eur))
   }, [expenses])
 
   const dateMin = `${selectedMonth}-01`

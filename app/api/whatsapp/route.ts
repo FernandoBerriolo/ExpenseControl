@@ -76,12 +76,13 @@ export async function POST(req: NextRequest) {
   // Fetch payment methods and user settings
   const [pmRes, settingsRes] = await Promise.all([
     supabaseAdmin.from('payment_methods').select('name, type').eq('user_id', phoneUser.user_id).order('sort_order'),
-    supabaseAdmin.from('user_settings').select('is_legacy').eq('user_id', phoneUser.user_id).single(),
+    supabaseAdmin.from('user_settings').select('is_legacy, default_currency').eq('user_id', phoneUser.user_id).single(),
   ])
   const userCards: string[] = ((pmRes.data ?? []) as { name: string; type: string }[])
     .filter(m => m.type !== 'cash')
     .map(m => m.name)
   const isLegacyUser = (settingsRes.data as { is_legacy: boolean } | null)?.is_legacy ?? true
+  const defaultCurrency = (settingsRes.data as { default_currency?: string } | null)?.default_currency as 'UYU' | 'USD' | 'EUR' ?? 'UYU'
 
   const ids: string[] = phoneUser.last_expense_ids ?? []
 
@@ -108,7 +109,7 @@ export async function POST(req: NextRequest) {
   if (!body && mediaUrl && mediaType?.startsWith('image/')) {
     const imageData = await downloadMedia(mediaUrl)
     if (!imageData) return twiml('❌ No pude descargar la imagen.')
-    const result = await analyzeReceiptImage(imageData, mediaType, userCards)
+    const result = await analyzeReceiptImage(imageData, mediaType, userCards, defaultCurrency)
     if (!result || result.type !== 'expenses') return twiml('❌ No pude leer el recibo. Intentá con una foto más clara o ingresá el gasto manualmente.')
     return await saveAndConfirmExpenses(result.items, phoneUser, from, isLegacyUser)
   }
@@ -138,7 +139,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Parsear con Claude ─────────────────────────────────────────────────────
-  const result = await parseWithAI(inputText, originalExpense, userCards)
+  const result = await parseWithAI(inputText, originalExpense, userCards, defaultCurrency)
 
   if (!result) {
     return twiml(
@@ -288,12 +289,12 @@ async function handleQuery(userId: string, q: QueryResult): Promise<string> {
 }
 
 // ─── Claude parsing ───────────────────────────────────────────────────────────
-async function parseWithAI(text: string, originalExpense: Record<string, unknown> | null = null, cards: string[] = ['Itaú', 'BROU', 'Scotiabank']): Promise<AIResult> {
-  const today    = new Date(Date.now() - 3 * 60 * 60 * 1000)
-  const todayStr = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`
-  const monthStr = todayStr.slice(0, 7)
-  const cardOptions = cards.length > 0 ? cards.map(c => `"${c}"`).join('|') + '|null' : 'null'
-
+async function parseWithAI(text: string, originalExpense: Record<string, unknown> | null = null, cards: string[] = ['Itaú', 'BROU', 'Scotiabank'], defaultCurrency: 'UYU' | 'USD' | 'EUR' = 'UYU'): Promise<AIResult> {
+  const result = await parseExpenseMessage(text, cards, defaultCurrency)
+  
+  if (result) return result
+  
+  // Si parseExpenseMessage no retorna nada pero hay edición pendiente, intentar con el gasto original
   if (originalExpense) {
     const editPrompt = `El usuario tenía registrado este gasto:\n${JSON.stringify(originalExpense)}\n\nAhora manda esta corrección: "${text}"\n\nAplicá los cambios al gasto original y devolvé ÚNICAMENTE este JSON:\n{"type":"expenses","items":[{"description":"...","amount":número,"currency":"UYU"|"USD"|"EUR","bank":${cardOptions},"category":"comida"|"nafta"|"ropa"|"hogar"|"alquiler"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza"|null,"installments":null,"date":null}]}`
     try {
@@ -405,7 +406,12 @@ async function transcribeAudio(url: string, mimeType: string): Promise<string | 
             { inlineData: { mimeType, data: base64 } },
             { text: 'Transcribí este mensaje de voz al español exactamente como se dice. Devolvé solo el texto transcripto, sin explicaciones ni comillas.' },
           ]}],
-          generationConfig: { temperature: 0 },
+          generationConfig: {
+            temperature: 0.0,
+            topP: 0.95,
+            topK: 40,
+            maxOutputTokens: 1000,
+          },
         }),
       }
     )
@@ -453,47 +459,71 @@ async function saveAndConfirmExpenses(
   from: string,
   isLegacyUser: boolean,
 ): Promise<NextResponse> {
-  const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(phoneUser.user_id)
-  const isOwed = isLegacyUser && !!OWED_USER_EMAIL && authUser?.user?.email === OWED_USER_EMAIL
-  const now = new Date(Date.now() - 3 * 60 * 60 * 1000)
-  const allEntries: Record<string, unknown>[] = []
-  for (const item of items) {
-    const expenseDate = item.date ?? `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`
-    const installments = item.installments && item.installments > 1 ? item.installments : 1
-    const installmentAmount = Math.round((item.amount / installments) * 100) / 100
-    const [baseYear, baseMonthNum] = expenseDate.split('-').map(Number)
-    for (let i = 0; i < installments; i++) {
-      const d = new Date(Date.UTC(baseYear, baseMonthNum - 1 + i, 1))
-      const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
-      allEntries.push({
-        user_id: phoneUser.user_id,
-        description: installments > 1 ? `${item.description} (${i + 1}/${installments})` : item.description,
-        amount: installmentAmount, currency: item.currency, bank: item.bank,
-        month, expense_date: expenseDate, category: item.category,
-        is_owed: isOwed && !!item.bank,
-      })
+  try {
+    const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(phoneUser.user_id)
+    const isOwed = isLegacyUser && !!OWED_USER_EMAIL && authUser?.user?.email === OWED_USER_EMAIL
+    const now = new Date(Date.now() - 3 * 60 * 60 * 1000)
+    const allEntries: Record<string, unknown>[] = []
+    
+    for (const item of items) {
+      const expenseDate = item.date ?? `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`
+      const installments = item.installments && item.installments > 1 ? item.installments : 1
+      const installmentAmount = Math.round((item.amount / installments) * 100) / 100
+      const [baseYear, baseMonthNum] = expenseDate.split('-').map(Number)
+      
+      for (let i = 0; i < installments; i++) {
+        const d = new Date(Date.UTC(baseYear, baseMonthNum - 1 + i, 1))
+        const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+        allEntries.push({
+          user_id: phoneUser.user_id,
+          description: installments > 1 ? `${item.description} (${i + 1}/${installments})` : item.description,
+          amount: installmentAmount,
+          currency: item.currency,
+          bank: item.bank,
+          month,
+          expense_date: expenseDate,
+          category: item.category,
+          is_owed: isOwed && !!item.bank,
+        })
+      }
     }
+    
+    const { data: inserted, error } = await supabaseAdmin.from('expenses').insert(allEntries).select('id')
+    if (error) {
+      console.error('❌ Error inserting expenses:', error)
+      return twiml('❌ Error al guardar. Intentá de nuevo.')
+    }
+    
+    if (!inserted || inserted.length === 0) {
+      console.warn('⚠️ No expenses were inserted')
+      return twiml('❌ No se guardaron los gastos. Intentá de nuevo.')
+    }
+    
+    const savedIds = inserted.map((r: { id: string }) => r.id)
+    await supabaseAdmin.from('phone_users')
+      .update({ last_expense_ids: savedIds, pending_edit: false })
+      .eq('whatsapp_phone', from)
+    
+    const fmt = (n: number, cur: string) => cur === 'USD' ? `USD ${n.toLocaleString('es-UY')}` : cur === 'EUR' ? `EUR ${n.toLocaleString('es-UY')}` : `$${n.toLocaleString('es-UY')}`
+    const actionHint = '\n\nRespondé *editar* o *borrar* para modificarlo.'
+    
+    if (items.length === 1) {
+      const item = items[0]
+      const parts = [
+        `✅ *${item.description}* guardado`,
+        fmt(item.amount, item.currency),
+        item.bank ? `Tarjeta: ${item.bank}` : 'Efectivo',
+        item.category ? CATEGORY_LABELS[item.category] : null,
+      ].filter(Boolean).join(' · ')
+      return twiml(parts + actionHint)
+    }
+    
+    const lines = items.map(i => `• ${i.description}: ${fmt(i.amount, i.currency)}`).join('\n')
+    return twiml(`✅ ${items.length} gastos guardados\n${lines}${actionHint}`)
+  } catch (error) {
+    console.error('❌ Unexpected error in saveAndConfirmExpenses:', error)
+    return twiml('❌ Error inesperado al guardar. Intentá de nuevo.')
   }
-  const { data: inserted, error } = await supabaseAdmin.from('expenses').insert(allEntries).select('id')
-  if (error) return twiml('❌ Error al guardar. Intentá de nuevo.')
-  const savedIds = (inserted ?? []).map((r: { id: string }) => r.id)
-  await supabaseAdmin.from('phone_users')
-    .update({ last_expense_ids: savedIds, pending_edit: false })
-    .eq('whatsapp_phone', from)
-  const fmt = (n: number, cur: string) => cur === 'USD' ? `USD ${n.toLocaleString('es-UY')}` : cur === 'EUR' ? `EUR ${n.toLocaleString('es-UY')}` : `$${n.toLocaleString('es-UY')}`
-  const actionHint = '\n\nRespondé *editar* o *borrar* para modificarlo.'
-  if (items.length === 1) {
-    const item = items[0]
-    const parts = [
-      `✅ *${item.description}* guardado`,
-      fmt(item.amount, item.currency),
-      item.bank ? `Tarjeta: ${item.bank}` : 'Efectivo',
-      item.category ? CATEGORY_LABELS[item.category] : null,
-    ].filter(Boolean).join(' · ')
-    return twiml(parts + actionHint)
-  }
-  const lines = items.map(i => `• ${i.description}: ${fmt(i.amount, i.currency)}`).join('\n')
-  return twiml(`✅ ${items.length} gastos guardados\n${lines}${actionHint}`)
 }
 
 function twiml(message: string): NextResponse {
