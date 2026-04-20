@@ -167,7 +167,10 @@ export async function analyzeReceiptImage(
   const cardOptions = cards.length > 0 ? cards.map(c => `"${c}"`).join(' | ') + ' | null' : 'null'
   const prompt = `Analizá esta imagen de un ticket, factura o recibo.
 Si hay un "monto total", "total" o similar, extrae SOLO ese monto como UN ÚNICO gasto.
-NO incluyas los items individuales, solo el total.
+NO inclujas los items individuales, solo el total.
+
+CRÍTICO - FECHA: SIEMPRE devolvé null en el campo "date", independientemente de la fecha que veas en el recibo.
+
 Devolvé ÚNICAMENTE este JSON (sin markdown, sin texto extra):
 {
   "type": "expenses",
@@ -178,7 +181,7 @@ Devolvé ÚNICAMENTE este JSON (sin markdown, sin texto extra):
     "bank": ${cardOptions},
     "category": "comida"|"nafta"|"ropa"|"hogar"|"alquiler"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza"|null,
     "installments": null,
-    "date": "YYYY-MM-DD" si se ve la fecha, si no null
+    "date": null
   }]
 }
 Si no hay monto total identificable, devolvé: {"error":"no_total"}
