@@ -113,16 +113,19 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
 
   const [showHistory, setShowHistory] = useState(false)
-  const [monthlyHistory, setMonthlyHistory] = useState<{ month: string; uyu: number; usd: number }[]>([])
-  const [showCategoryChart, setShowCategoryChart] = useState(true)
+  const [monthlyHistory, setMonthlyHistory] = useState<{ month: string; uyu: number; usd: number; incomeUYU: number; incomeUSD: number; savingsUYU: number; savingsUSD: number }[]>([])
+  const [showCardBreakdown, setShowCardBreakdown] = useState(false)
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
 
   const [modalMode, setModalMode] = useState<ModalMode>(null)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
-  // Income state
+  // Income & savings state
   const [incomes, setIncomes] = useState<Income[]>([])
+  const [savings, setSavings] = useState<Income[]>([])
   const [showIncomeModal, setShowIncomeModal] = useState(false)
+  const [incomeModalType, setIncomeModalType] = useState<'income' | 'savings'>('income')
   const [incomeDesc, setIncomeDesc] = useState('Sueldo')
   const [incomeAmount, setIncomeAmount] = useState('')
   const [incomeCurrency, setIncomeCurrency] = useState<'UYU' | 'USD'>('UYU')
@@ -239,12 +242,28 @@ export default function Dashboard() {
       .select('*')
       .eq('user_id', activeAccount.user_id)
       .eq('month', selectedMonth)
+      .eq('type', 'income')
       .order('created_at', { ascending: false })
 
     if (!error && data) setIncomes(data as Income[])
   }, [selectedMonth, activeAccount])
 
   useEffect(() => { loadIncomes() }, [loadIncomes])
+
+  const loadSavings = useCallback(async () => {
+    if (!activeAccount) return
+    const { data, error } = await supabase
+      .from('incomes')
+      .select('*')
+      .eq('user_id', activeAccount.user_id)
+      .eq('month', selectedMonth)
+      .eq('type', 'savings')
+      .order('created_at', { ascending: false })
+
+    if (!error && data) setSavings(data as Income[])
+  }, [selectedMonth, activeAccount])
+
+  useEffect(() => { loadSavings() }, [loadSavings])
 
   const [owedTotalUYU, setOwedTotalUYU] = useState(0)
   const [owedTotalUSD, setOwedTotalUSD] = useState(0)
@@ -268,17 +287,31 @@ export default function Dashboard() {
 
   const loadMonthlyHistory = useCallback(async () => {
     if (!activeAccount) return
-    const { data } = await supabase
-      .from('expenses')
-      .select('month, amount, currency')
-      .eq('user_id', activeAccount.user_id)
-      .order('month', { ascending: true })
-    if (!data) return
-    const map: Record<string, { uyu: number; usd: number }> = {}
-    for (const e of data as { month: string; amount: number; currency: string }[]) {
-      if (!map[e.month]) map[e.month] = { uyu: 0, usd: 0 }
+    const [expRes, incRes] = await Promise.all([
+      supabase.from('expenses').select('month, amount, currency')
+        .eq('user_id', activeAccount.user_id).order('month', { ascending: true }),
+      supabase.from('incomes').select('month, amount, currency, type')
+        .eq('user_id', activeAccount.user_id).order('month', { ascending: true }),
+    ])
+    const map: Record<string, { uyu: number; usd: number; incomeUYU: number; incomeUSD: number; savingsUYU: number; savingsUSD: number }> = {}
+    const ensure = (m: string) => {
+      if (!map[m]) map[m] = { uyu: 0, usd: 0, incomeUYU: 0, incomeUSD: 0, savingsUYU: 0, savingsUSD: 0 }
+    }
+    for (const e of (expRes.data ?? []) as { month: string; amount: number; currency: string }[]) {
+      ensure(e.month)
       if (e.currency === 'UYU') map[e.month].uyu += e.amount
       else map[e.month].usd += e.amount
+    }
+    for (const i of (incRes.data ?? []) as { month: string; amount: number; currency: string; type: string }[]) {
+      ensure(i.month)
+      const isSavings = i.type === 'savings'
+      if (i.currency === 'UYU') {
+        if (isSavings) map[i.month].savingsUYU += i.amount
+        else map[i.month].incomeUYU += i.amount
+      } else {
+        if (isSavings) map[i.month].savingsUSD += i.amount
+        else map[i.month].incomeUSD += i.amount
+      }
     }
     setMonthlyHistory(Object.entries(map).map(([month, v]) => ({ month, ...v })))
   }, [activeAccount])
@@ -370,15 +403,17 @@ export default function Dashboard() {
       currency: incomeCurrency,
       month: selectedMonth,
       income_date: `${selectedMonth}-01`,
+      type: incomeModalType,
     })
     if (error) {
       setIncomeError('Error al guardar. Intentá de nuevo.')
     } else {
       setShowIncomeModal(false)
       setIncomeAmount('')
-      setIncomeDesc('Sueldo')
+      setIncomeDesc(incomeModalType === 'income' ? 'Sueldo' : 'Ahorro')
       setIncomeCurrency('UYU')
-      loadIncomes()
+      if (incomeModalType === 'income') loadIncomes()
+      else loadSavings()
     }
     setIncomeFormLoading(false)
   }
@@ -387,6 +422,7 @@ export default function Dashboard() {
     await supabase.from('incomes').delete().eq('id', id)
     setDeleteIncomeConfirm(null)
     loadIncomes()
+    loadSavings()
   }
 
   // --- Expense form ---
@@ -488,38 +524,43 @@ export default function Dashboard() {
 
   const totalUYU = expenses.filter(e => e.currency === 'UYU').reduce((s, e) => s + e.amount, 0)
   const totalUSD = expenses.filter(e => e.currency === 'USD').reduce((s, e) => s + e.amount, 0)
-  // Balance only counts "Otros" (cash) expenses, not card expenses
-  const cardTotalUYU = expenses.filter(e => e.currency === 'UYU' && !e.bank).reduce((s, e) => s + e.amount, 0)
-  const cardTotalUSD = expenses.filter(e => e.currency === 'USD' && !e.bank).reduce((s, e) => s + e.amount, 0)
   const incomeTotalUYU = incomes.filter(i => i.currency === 'UYU').reduce((s, i) => s + i.amount, 0)
   const incomeTotalUSD = incomes.filter(i => i.currency === 'USD').reduce((s, i) => s + i.amount, 0)
+  const savingsTotalUYU = savings.filter(s => s.currency === 'UYU').reduce((acc, s) => acc + s.amount, 0)
+  const savingsTotalUSD = savings.filter(s => s.currency === 'USD').reduce((acc, s) => acc + s.amount, 0)
   const viewingShared = activeAccount && !activeAccount.isOwn
 
-  // Category chart data
-  const categoryData = useMemo(() => {
-    const groups: Record<string, { uyu: number; usd: number }> = {}
+  // Expenses grouped by category
+  const expensesByCategory = useMemo(() => {
+    const groups: Record<string, { expenses: Expense[]; uyu: number; usd: number }> = {}
     for (const e of expenses) {
       const key = e.category || '__sin__'
-      if (!groups[key]) groups[key] = { uyu: 0, usd: 0 }
+      if (!groups[key]) groups[key] = { expenses: [], uyu: 0, usd: 0 }
+      groups[key].expenses.push(e)
       if (e.currency === 'UYU') groups[key].uyu += e.amount
       else groups[key].usd += e.amount
     }
     return Object.entries(groups)
-      .map(([cat, totals]) => {
+      .map(([cat, data]) => {
         const info = getCategoryInfo(cat)
-        return {
-          cat,
-          uyu: totals.uyu,
-          usd: totals.usd,
-          label: info?.label ?? 'Sin categoría',
-          emoji: info?.emoji ?? '📦',
-        }
+        return { cat, label: info?.label ?? 'Sin categoría', emoji: info?.emoji ?? '📦', ...data }
       })
-      .sort((a, b) => b.uyu - a.uyu)
+      .sort((a, b) => (b.uyu + b.usd) - (a.uyu + a.usd))
   }, [expenses])
 
-  const maxUYU = Math.max(...categoryData.map(d => d.uyu), 1)
-  const maxUSD = Math.max(...categoryData.map(d => d.usd), 1)
+  // Bank/cash breakdown
+  const bankBreakdown = useMemo(() => {
+    const map: Record<string, { uyu: number; usd: number }> = {}
+    for (const e of expenses) {
+      const key = e.bank ?? '__cash__'
+      if (!map[key]) map[key] = { uyu: 0, usd: 0 }
+      if (e.currency === 'UYU') map[key].uyu += e.amount
+      else map[key].usd += e.amount
+    }
+    return Object.entries(map)
+      .filter(([, v]) => v.uyu > 0 || v.usd > 0)
+      .sort((a, b) => (b[1].uyu + b[1].usd) - (a[1].uyu + a[1].usd))
+  }, [expenses])
 
   const dateMin = `${selectedMonth}-01`
   const dateMax = lastDayOfMonth(selectedMonth)
@@ -590,59 +631,85 @@ export default function Dashboard() {
             className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-600 text-xl">›</button>
         </div>
 
-        {/* Income Section */}
-        <div className="bg-white rounded-2xl shadow-sm p-4">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-semibold text-gray-700">💼 Ingresos del mes</p>
-            {!viewingShared && (
-              <button
-                onClick={() => { setShowIncomeModal(true); setIncomeError('') }}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-lg font-bold"
-                style={{ background: 'linear-gradient(135deg, #667eea, #764ba2)' }}
-              >+</button>
+        {/* Income & Savings Section */}
+        <div className="bg-white rounded-2xl shadow-sm p-4 space-y-4">
+          {/* Ingresos */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-semibold text-gray-700">💼 Ingresos del mes</p>
+              {!viewingShared && (
+                <button
+                  onClick={() => { setIncomeModalType('income'); setIncomeDesc('Sueldo'); setIncomeAmount(''); setIncomeCurrency('UYU'); setShowIncomeModal(true); setIncomeError('') }}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-lg font-bold"
+                  style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}
+                >+</button>
+              )}
+            </div>
+            {incomes.length === 0 ? (
+              <p className="text-sm text-gray-400">Sin ingresos registrados este mes</p>
+            ) : (
+              <div className="space-y-1.5">
+                {incomes.map(income => (
+                  <div key={income.id} className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-gray-700">{income.description}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-bold text-green-600">{formatMoney(income.amount, income.currency)}</p>
+                      {!viewingShared && (
+                        <button onClick={() => setDeleteIncomeConfirm(income.id)}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-sm">🗑️</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {(incomeTotalUYU > 0 || incomeTotalUSD > 0) && incomes.length > 1 && (
+                  <div className="pt-1 border-t border-gray-100 flex gap-3">
+                    {incomeTotalUYU > 0 && <p className="text-xs font-bold text-green-700">Total: {formatMoney(incomeTotalUYU, 'UYU')}</p>}
+                    {incomeTotalUSD > 0 && <p className="text-xs font-bold text-green-700">Total: {formatMoney(incomeTotalUSD, 'USD')}</p>}
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
-          {incomes.length === 0 ? (
-            <p className="text-sm text-gray-400">Sin ingresos registrados este mes</p>
-          ) : (
-            <div className="space-y-2">
-              {incomes.map(income => (
-                <div key={income.id} className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-gray-700">{income.description}</p>
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-bold text-green-600">{formatMoney(income.amount, income.currency)}</p>
-                    {!viewingShared && (
-                      <button onClick={() => setDeleteIncomeConfirm(income.id)}
-                        className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-sm">🗑️</button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="border-t border-gray-100" />
 
-          {/* Balance — solo tarjetas, no efectivo */}
-          {(incomeTotalUYU > 0 || incomeTotalUSD > 0) && (
-            <div className="mt-3 pt-3 border-t border-gray-100 space-y-1.5">
-              {incomeTotalUYU > 0 && cardTotalUYU > 0 && (
-                <div className="flex justify-between items-center">
-                  <p className="text-xs text-gray-500">Balance Pesos <span className="text-gray-400">(solo tarjetas)</span></p>
-                  <p className={`text-sm font-bold ${incomeTotalUYU - cardTotalUYU >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                    {incomeTotalUYU - cardTotalUYU >= 0 ? '+' : ''}{formatMoney(incomeTotalUYU - cardTotalUYU, 'UYU')}
-                  </p>
-                </div>
-              )}
-              {incomeTotalUSD > 0 && cardTotalUSD > 0 && (
-                <div className="flex justify-between items-center">
-                  <p className="text-xs text-gray-500">Balance Dólares <span className="text-gray-400">(solo tarjetas)</span></p>
-                  <p className={`text-sm font-bold ${incomeTotalUSD - cardTotalUSD >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                    {incomeTotalUSD - cardTotalUSD >= 0 ? '+' : ''}{formatMoney(incomeTotalUSD - cardTotalUSD, 'USD')}
-                  </p>
-                </div>
+          {/* Ahorros */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-semibold text-gray-700">🏦 Ahorros del mes</p>
+              {!viewingShared && (
+                <button
+                  onClick={() => { setIncomeModalType('savings'); setIncomeDesc('Ahorro'); setIncomeAmount(''); setIncomeCurrency('UYU'); setShowIncomeModal(true); setIncomeError('') }}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-lg font-bold"
+                  style={{ background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)' }}
+                >+</button>
               )}
             </div>
-          )}
+            {savings.length === 0 ? (
+              <p className="text-sm text-gray-400">Sin ahorros registrados este mes</p>
+            ) : (
+              <div className="space-y-1.5">
+                {savings.map(s => (
+                  <div key={s.id} className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-gray-700">{s.description}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-bold text-blue-600">{formatMoney(s.amount, s.currency)}</p>
+                      {!viewingShared && (
+                        <button onClick={() => setDeleteIncomeConfirm(s.id)}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-sm">🗑️</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {(savingsTotalUYU > 0 || savingsTotalUSD > 0) && savings.length > 1 && (
+                  <div className="pt-1 border-t border-gray-100 flex gap-3">
+                    {savingsTotalUYU > 0 && <p className="text-xs font-bold text-blue-700">Total: {formatMoney(savingsTotalUYU, 'UYU')}</p>}
+                    {savingsTotalUSD > 0 && <p className="text-xs font-bold text-blue-700">Total: {formatMoney(savingsTotalUSD, 'USD')}</p>}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Totals */}
@@ -682,72 +749,30 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Category Chart */}
+        {/* Card / Cash Breakdown */}
         {expenses.length > 0 && (
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             <button
               className="w-full px-4 py-3.5 flex items-center justify-between"
-              onClick={() => setShowCategoryChart(!showCategoryChart)}
+              onClick={() => setShowCardBreakdown(!showCardBreakdown)}
             >
-              <span className="text-sm font-semibold text-gray-700">📊 Gastos por categoría</span>
-              <span className="text-gray-400 text-lg">{showCategoryChart ? '▲' : '▼'}</span>
+              <span className="text-sm font-semibold text-gray-700">💳 Gastos por tarjeta</span>
+              <span className="text-gray-400 text-lg">{showCardBreakdown ? '▲' : '▼'}</span>
             </button>
-
-            {showCategoryChart && (
-              <div className="px-4 pb-4">
-                {totalUYU > 0 && (
-                  <div className="space-y-3">
-                    {categoryData.filter(d => d.uyu > 0).map(d => (
-                      <div key={`uyu-${d.cat}`}>
-                        <div className="flex items-center justify-between mb-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-base">{d.emoji}</span>
-                            <span className="text-xs font-medium text-gray-600">{d.label}</span>
-                          </div>
-                          <span className="text-xs font-bold" style={{ color: '#667eea' }}>
-                            {formatMoney(d.uyu, 'UYU')}
-                          </span>
-                        </div>
-                        <div className="w-full bg-gray-100 rounded-full h-2">
-                          <div className="h-2 rounded-full transition-all"
-                            style={{
-                              width: `${(d.uyu / maxUYU) * 100}%`,
-                              background: 'linear-gradient(135deg, #667eea, #764ba2)'
-                            }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {totalUSD > 0 && (
-                  <>
-                    {totalUYU > 0 && <div className="my-4 border-t border-gray-100" />}
-                    <p className="text-xs text-gray-400 font-medium mb-3">En dólares</p>
-                    <div className="space-y-3">
-                      {categoryData.filter(d => d.usd > 0).map(d => (
-                        <div key={`usd-${d.cat}`}>
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-base">{d.emoji}</span>
-                              <span className="text-xs font-medium text-gray-600">{d.label}</span>
-                            </div>
-                            <span className="text-xs font-bold" style={{ color: '#764ba2' }}>
-                              {formatMoney(d.usd, 'USD')}
-                            </span>
-                          </div>
-                          <div className="w-full bg-gray-100 rounded-full h-2">
-                            <div className="h-2 rounded-full transition-all"
-                              style={{
-                                width: `${(d.usd / maxUSD) * 100}%`,
-                                background: 'linear-gradient(135deg, #764ba2, #a855f7)'
-                              }} />
-                          </div>
-                        </div>
-                      ))}
+            {showCardBreakdown && (
+              <div className="px-4 pb-4 space-y-2.5">
+                {bankBreakdown.map(([key, v]) => (
+                  <div key={key} className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{key === '__cash__' ? '💵' : '💳'}</span>
+                      <span className="text-sm font-medium text-gray-700">{key === '__cash__' ? 'Efectivo / Débito' : key}</span>
                     </div>
-                  </>
-                )}
+                    <div className="text-right">
+                      {v.uyu > 0 && <p className="text-sm font-bold" style={{ color: '#667eea' }}>{formatMoney(v.uyu, 'UYU')}</p>}
+                      {v.usd > 0 && <p className="text-sm font-bold" style={{ color: '#764ba2' }}>{formatMoney(v.usd, 'USD')}</p>}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -767,74 +792,62 @@ export default function Dashboard() {
             <div className="px-4 pb-4">
               {monthlyHistory.length === 0 ? (
                 <p className="text-sm text-gray-400 py-2">Sin datos</p>
-              ) : (() => {
-                const maxUYUh = Math.max(...monthlyHistory.map(m => m.uyu), 1)
-                const totalAllTimeUYU = monthlyHistory.reduce((s, m) => s + m.uyu, 0)
-                const totalAllTimeUSD = monthlyHistory.reduce((s, m) => s + m.usd, 0)
-                return (
-                  <>
-                    {/* Totales acumulados */}
-                    <div className="flex gap-3 mb-4">
-                      {totalAllTimeUYU > 0 && (
-                        <div className="flex-1 rounded-xl px-3 py-2.5" style={{ background: '#f0f2ff' }}>
-                          <p className="text-xs text-gray-400 mb-0.5">Acumulado pesos</p>
-                          <p className="text-sm font-bold" style={{ color: '#667eea' }}>
-                            $ {totalAllTimeUYU.toLocaleString('es-UY', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                          </p>
+              ) : (
+                <div className="space-y-2">
+                  {[...monthlyHistory].reverse().map(m => {
+                    const isSelected = m.month === selectedMonth
+                    const hasIncome = m.incomeUYU > 0 || m.incomeUSD > 0
+                    const hasSavings = m.savingsUYU > 0 || m.savingsUSD > 0
+                    return (
+                      <button
+                        key={m.month}
+                        className="w-full text-left rounded-xl px-3 py-3 transition-all"
+                        style={isSelected
+                          ? { background: '#e8edff', border: '1.5px solid #667eea' }
+                          : { background: '#f9fafb', border: '1.5px solid transparent' }}
+                        onClick={() => setSelectedMonth(m.month)}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-semibold" style={{ color: isSelected ? '#667eea' : '#374151' }}>
+                            {monthLabel(m.month)}{isSelected ? ' ◀' : ''}
+                          </span>
                         </div>
-                      )}
-                      {totalAllTimeUSD > 0 && (
-                        <div className="flex-1 rounded-xl px-3 py-2.5" style={{ background: '#f5f3ff' }}>
-                          <p className="text-xs text-gray-400 mb-0.5">Acumulado dólares</p>
-                          <p className="text-sm font-bold" style={{ color: '#764ba2' }}>
-                            USD {totalAllTimeUSD.toLocaleString('es-UY', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                          </p>
+                        <div className="grid grid-cols-3 gap-2 text-xs">
+                          <div>
+                            <p className="text-gray-400 mb-0.5">Gastos</p>
+                            {m.uyu > 0 && <p className="font-bold" style={{ color: '#ef4444' }}>$ {m.uyu.toLocaleString('es-UY', { maximumFractionDigits: 0 })}</p>}
+                            {m.usd > 0 && <p className="font-bold" style={{ color: '#9f1239' }}>USD {m.usd.toLocaleString('es-UY', { maximumFractionDigits: 0 })}</p>}
+                            {m.uyu === 0 && m.usd === 0 && <p className="text-gray-300">—</p>}
+                          </div>
+                          <div>
+                            <p className="text-gray-400 mb-0.5">Ingresos</p>
+                            {hasIncome ? (
+                              <>
+                                {m.incomeUYU > 0 && <p className="font-bold text-green-600">$ {m.incomeUYU.toLocaleString('es-UY', { maximumFractionDigits: 0 })}</p>}
+                                {m.incomeUSD > 0 && <p className="font-bold text-green-700">USD {m.incomeUSD.toLocaleString('es-UY', { maximumFractionDigits: 0 })}</p>}
+                              </>
+                            ) : <p className="text-gray-300">—</p>}
+                          </div>
+                          <div>
+                            <p className="text-gray-400 mb-0.5">Ahorros</p>
+                            {hasSavings ? (
+                              <>
+                                {m.savingsUYU > 0 && <p className="font-bold text-blue-600">$ {m.savingsUYU.toLocaleString('es-UY', { maximumFractionDigits: 0 })}</p>}
+                                {m.savingsUSD > 0 && <p className="font-bold text-blue-700">USD {m.savingsUSD.toLocaleString('es-UY', { maximumFractionDigits: 0 })}</p>}
+                              </>
+                            ) : <p className="text-gray-300">—</p>}
+                          </div>
                         </div>
-                      )}
-                    </div>
-
-                    {/* Barras por mes */}
-                    <div className="space-y-2.5">
-                      {[...monthlyHistory].reverse().map(m => {
-                        const isSelected = m.month === selectedMonth
-                        return (
-                          <button
-                            key={m.month}
-                            className="w-full text-left"
-                            onClick={() => setSelectedMonth(m.month)}
-                          >
-                            <div className="flex items-center justify-between mb-1">
-                              <span className={`text-xs font-medium ${isSelected ? 'text-indigo-600' : 'text-gray-500'}`}>
-                                {monthLabel(m.month)} {isSelected && '◀'}
-                              </span>
-                              <span className={`text-xs font-bold ${isSelected ? 'text-indigo-600' : 'text-gray-700'}`}>
-                                $ {m.uyu.toLocaleString('es-UY', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                {m.usd > 0 && <span className="text-purple-500 ml-1">· USD {m.usd.toLocaleString('es-UY', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>}
-                              </span>
-                            </div>
-                            <div className="w-full bg-gray-100 rounded-full h-1.5">
-                              <div
-                                className="h-1.5 rounded-full transition-all"
-                                style={{
-                                  width: `${(m.uyu / maxUYUh) * 100}%`,
-                                  background: isSelected
-                                    ? 'linear-gradient(135deg, #667eea, #764ba2)'
-                                    : '#c7d2fe',
-                                }}
-                              />
-                            </div>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </>
-                )
-              })()}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        {/* Expenses list */}
+        {/* Expenses grouped by category */}
         <div className="space-y-3">
           {loading ? (
             <div className="flex justify-center py-10">
@@ -847,51 +860,73 @@ export default function Dashboard() {
               <p className="text-gray-400 text-sm mt-1">Tocá + para agregar uno</p>
             </div>
           ) : (
-            expenses.map(expense => {
-              const catInfo = getCategoryInfo(expense.category)
+            expensesByCategory.map(group => {
+              const isExpanded = expandedCategories.has(group.cat)
               return (
-                <div key={expense.id} className="bg-white rounded-2xl shadow-sm p-4 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ background: expense.currency === 'USD' ? '#f3e8ff' : '#e8edff' }}>
-                    <span className="text-lg">{catInfo ? catInfo.emoji : (expense.currency === 'USD' ? '💵' : '💰')}</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-gray-800 truncate">{expense.description}</p>
-                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                      <p className="text-xs text-gray-400">
-                        {expense.expense_date ? formatDate(expense.expense_date) : ''}
-                      </p>
-                      {expense.bank && (
-                        <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
-                          style={{ background: '#f0f2ff', color: '#667eea' }}>
-                          {expense.bank}
-                        </span>
-                      )}
-                      {catInfo && (
-                        <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
-                          style={{ background: '#f5f3ff', color: '#7c3aed' }}>
-                          {catInfo.label}
-                        </span>
-                      )}
-                      {expense.is_owed && (
-                        <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
-                          style={{ background: '#fff7ed', color: '#c2410c' }}>
-                          💸 Debes a Fer
-                        </span>
-                      )}
+                <div key={group.cat} className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                  <button
+                    className="w-full px-4 py-3.5 flex items-center gap-3"
+                    onClick={() => setExpandedCategories(prev => {
+                      const next = new Set(prev)
+                      if (next.has(group.cat)) next.delete(group.cat)
+                      else next.add(group.cat)
+                      return next
+                    })}
+                  >
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ background: '#e8edff' }}>
+                      <span className="text-lg">{group.emoji}</span>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <p className="font-bold text-base" style={{ color: expense.currency === 'USD' ? '#764ba2' : '#667eea' }}>
-                      {formatMoney(expense.amount, expense.currency)}
-                    </p>
-                    <div className="flex gap-1">
-                      <button onClick={() => openEditModal(expense)}
-                        className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100">✏️</button>
-                      <button onClick={() => setDeleteConfirm(expense.id)}
-                        className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50">🗑️</button>
+                    <div className="flex-1 text-left min-w-0">
+                      <p className="text-sm font-semibold text-gray-800">{group.label}</p>
+                      <p className="text-xs text-gray-400">{group.expenses.length} gasto{group.expenses.length !== 1 ? 's' : ''}</p>
                     </div>
-                  </div>
+                    <div className="text-right flex-shrink-0 mr-2">
+                      {group.uyu > 0 && <p className="text-sm font-bold" style={{ color: '#667eea' }}>{formatMoney(group.uyu, 'UYU')}</p>}
+                      {group.usd > 0 && <p className="text-sm font-bold" style={{ color: '#764ba2' }}>{formatMoney(group.usd, 'USD')}</p>}
+                    </div>
+                    <span className="text-gray-400 text-base">{isExpanded ? '▲' : '▼'}</span>
+                  </button>
+
+                  {isExpanded && (
+                    <div className="border-t border-gray-100">
+                      {group.expenses.map((expense, idx) => (
+                        <div key={expense.id}
+                          className="px-4 py-3 flex items-center gap-3"
+                          style={{ borderTop: idx > 0 ? '1px solid #f3f4f6' : undefined }}>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-800 truncate">{expense.description}</p>
+                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                              <p className="text-xs text-gray-400">
+                                {expense.expense_date ? formatDate(expense.expense_date) : ''}
+                              </p>
+                              {expense.bank && (
+                                <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
+                                  style={{ background: '#f0f2ff', color: '#667eea' }}>
+                                  {expense.bank}
+                                </span>
+                              )}
+                              {expense.is_owed && (
+                                <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
+                                  style={{ background: '#fff7ed', color: '#c2410c' }}>
+                                  💸 Debes a Fer
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <p className="font-bold text-sm mr-1" style={{ color: expense.currency === 'USD' ? '#764ba2' : '#667eea' }}>
+                              {formatMoney(expense.amount, expense.currency)}
+                            </p>
+                            <button onClick={() => openEditModal(expense)}
+                              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100">✏️</button>
+                            <button onClick={() => setDeleteConfirm(expense.id)}
+                              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50">🗑️</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )
             })
@@ -1130,7 +1165,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Add Income Modal */}
+      {/* Add Income / Savings Modal */}
       {showIncomeModal && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-4 pb-4 sm:pb-0"
           style={{ background: 'rgba(0,0,0,0.5)' }}
@@ -1138,7 +1173,9 @@ export default function Dashboard() {
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6"
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-xl font-bold text-gray-800">Agregar ingreso</h2>
+              <h2 className="text-xl font-bold text-gray-800">
+                {incomeModalType === 'income' ? '💼 Agregar ingreso' : '🏦 Agregar ahorro'}
+              </h2>
               <button onClick={() => setShowIncomeModal(false)}
                 className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400">✕</button>
             </div>
@@ -1206,7 +1243,7 @@ export default function Dashboard() {
                 </button>
                 <button type="submit" disabled={incomeFormLoading}
                   className="flex-1 py-3 rounded-xl font-semibold text-white active:scale-95 disabled:opacity-70"
-                  style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
+                  style={{ background: incomeModalType === 'income' ? 'linear-gradient(135deg, #22c55e, #16a34a)' : 'linear-gradient(135deg, #3b82f6, #1d4ed8)' }}>
                   {incomeFormLoading
                     ? <span className="flex items-center justify-center gap-2">
                         <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -1244,7 +1281,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Delete Income Confirm */}
+      {/* Delete Income / Savings Confirm */}
       {deleteIncomeConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
           style={{ background: 'rgba(0,0,0,0.5)' }}
@@ -1252,7 +1289,7 @@ export default function Dashboard() {
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xs p-6 text-center"
             onClick={e => e.stopPropagation()}>
             <div className="text-4xl mb-3">🗑️</div>
-            <h3 className="text-lg font-bold text-gray-800 mb-2">¿Eliminar ingreso?</h3>
+            <h3 className="text-lg font-bold text-gray-800 mb-2">¿Eliminar registro?</h3>
             <p className="text-gray-500 text-sm mb-5">Esta acción no se puede deshacer.</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteIncomeConfirm(null)}

@@ -12,7 +12,6 @@ const CATEGORY_LABELS: Record<string, string> = {
 }
 
 export async function POST(req: NextRequest) {
-  // Obtener usuario autenticado via Bearer token
   const token = req.headers.get('authorization')?.replace('Bearer ', '')
   if (!token) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
   const { data: { user } } = await supabaseAdmin.auth.getUser(token)
@@ -24,7 +23,31 @@ export async function POST(req: NextRequest) {
   const result = await parseExpenseMessage(message.trim())
 
   if (!result) {
-    return NextResponse.json({ reply: '❌ No pude entender el gasto. Probá con: "pizza 350 itau" o "gasté 800 en super"' })
+    return NextResponse.json({ reply: '❌ No pude entender. Probá: "pizza 350 itau", "cobré el sueldo 50000", "ahorré 5000"' })
+  }
+
+  // ── Ingreso o ahorro ────────────────────────────────────────────────────────
+  if (result.type === 'income' || result.type === 'savings') {
+    const now = new Date(Date.now() - 3 * 60 * 60 * 1000)
+    const month = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`
+    const { error } = await supabaseAdmin.from('incomes').insert({
+      user_id:     user.id,
+      description: result.description,
+      amount:      result.amount,
+      currency:    result.currency,
+      month,
+      income_date: `${month}-01`,
+      type:        result.type,
+    })
+    if (error) return NextResponse.json({ reply: '❌ Error al guardar. Intentá de nuevo.' })
+    const label = result.type === 'income' ? '💼 Ingreso' : '🏦 Ahorro'
+    const currencyStr = result.currency === 'USD'
+      ? `USD ${result.amount.toLocaleString('es-UY')}`
+      : `$${result.amount.toLocaleString('es-UY')}`
+    return NextResponse.json({
+      reply: `✅ **${result.description}** guardado como ${label}\n${currencyStr}`,
+      saved: true,
+    })
   }
 
   // ── Consulta ────────────────────────────────────────────────────────────────
@@ -74,11 +97,11 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Guardar gastos ──────────────────────────────────────────────────────────
+  if (result.type !== 'expenses') return NextResponse.json({ reply: '❌ No pude entender el gasto.' })
+
   const isOwed = OWED_USER_EMAIL && user.email === OWED_USER_EMAIL
   const now = new Date(Date.now() - 3 * 60 * 60 * 1000)
   const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`
-
-  if (result.type !== 'expenses') return NextResponse.json({ reply: '❌ No pude entender el gasto.' })
 
   const allEntries: Record<string, unknown>[] = []
   for (const item of result.items) {
@@ -94,7 +117,7 @@ export async function POST(req: NextRequest) {
         user_id:      user.id,
         description:  installments > 1 ? `${item.description} (${i + 1}/${installments})` : item.description,
         amount:       installmentAmount,
-        currency:     'UYU',
+        currency:     item.currency,
         bank:         item.bank,
         month,
         expense_date: expenseDate,
@@ -107,24 +130,34 @@ export async function POST(req: NextRequest) {
   const { error } = await supabaseAdmin.from('expenses').insert(allEntries)
   if (error) return NextResponse.json({ reply: '❌ Error al guardar. Intentá de nuevo.' })
 
-  // Armar respuesta
   if (result.items.length === 1) {
     const item = result.items[0]
     const installments = item.installments && item.installments > 1 ? item.installments : 1
     const installmentAmount = Math.round((item.amount / installments) * 100) / 100
+    const amountStr = item.currency === 'USD'
+      ? `USD ${item.amount.toLocaleString('es-UY')}`
+      : `$${item.amount.toLocaleString('es-UY')}`
     const lines = [
       `✅ **${item.description}** guardado`,
-      `$${item.amount.toLocaleString('es-UY')}`,
-      installments > 1 ? `${installments} cuotas de $${installmentAmount.toLocaleString('es-UY')}` : null,
+      amountStr,
+      installments > 1 ? `${installments} cuotas de ${item.currency === 'USD' ? 'USD' : '$'}${installmentAmount.toLocaleString('es-UY')}` : null,
       item.bank ? `Tarjeta: ${item.bank}` : 'Efectivo',
       item.category ? CATEGORY_LABELS[item.category] : null,
       item.date ? `Fecha: ${item.date.split('-').reverse().join('/')}` : null,
     ].filter(Boolean).join(' · ')
     return NextResponse.json({ reply: lines, saved: true })
   } else {
-    const lines = result.items.map(i => `• ${i.description}: $${i.amount.toLocaleString('es-UY')}`).join('\n')
-    const total = result.items.reduce((s, i) => s + i.amount, 0)
-    return NextResponse.json({ reply: `✅ ${result.items.length} gastos guardados\n${lines}\nTotal: $${total.toLocaleString('es-UY')}`, saved: true })
+    const lines = result.items.map(i => {
+      const amt = i.currency === 'USD' ? `USD ${i.amount.toLocaleString('es-UY')}` : `$${i.amount.toLocaleString('es-UY')}`
+      return `• ${i.description}: ${amt}`
+    }).join('\n')
+    const totalUYU = result.items.filter(i => i.currency === 'UYU').reduce((s, i) => s + i.amount, 0)
+    const totalUSD = result.items.filter(i => i.currency === 'USD').reduce((s, i) => s + i.amount, 0)
+    const totals = [
+      totalUYU > 0 ? `$${totalUYU.toLocaleString('es-UY')}` : null,
+      totalUSD > 0 ? `USD ${totalUSD.toLocaleString('es-UY')}` : null,
+    ].filter(Boolean).join(' + ')
+    return NextResponse.json({ reply: `✅ ${result.items.length} gastos guardados\n${lines}\nTotal: ${totals}`, saved: true })
   }
 }
 

@@ -11,6 +11,7 @@ const API_BASE         = `https://api.telegram.org/bot${BOT_TOKEN}`
 type ExpenseItem = {
   description: string
   amount: number
+  currency: 'UYU' | 'USD'
   bank: string | null
   category: string | null
   installments: number | null
@@ -29,7 +30,14 @@ type QueryResult = {
   month: string   // YYYY-MM
 }
 
-type AIResult = ExpensesResult | QueryResult | null
+type EntryResult = {
+  type: 'income' | 'savings'
+  description: string
+  amount: number
+  currency: 'UYU' | 'USD'
+}
+
+type AIResult = ExpensesResult | QueryResult | EntryResult | null
 
 // ─── Handler principal ────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
@@ -189,9 +197,36 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
-  // ── Guardar gastos ────────────────────────────────────────────────────────
+  // ── Guardar ingreso o ahorro ──────────────────────────────────────────────
   const now = new Date(Date.now() - 3 * 60 * 60 * 1000)
 
+  if (result.type === 'income' || result.type === 'savings') {
+    const month = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`
+    const { error } = await supabaseAdmin.from('incomes').insert({
+      user_id:     phoneUser.user_id,
+      description: result.description,
+      amount:      result.amount,
+      currency:    result.currency,
+      month,
+      income_date: `${month}-01`,
+      type:        result.type,
+    })
+    if (error) {
+      await sendMessage(chatId, '❌ Error al guardar\\. Intentá de nuevo\\.', 'MarkdownV2')
+      return NextResponse.json({ ok: true })
+    }
+    const label = result.type === 'income' ? '💼 Ingreso' : '🏦 Ahorro'
+    const amtStr = result.currency === 'USD'
+      ? `USD ${escapeMarkdown(result.amount.toLocaleString('es-UY'))}`
+      : `\\$${escapeMarkdown(result.amount.toLocaleString('es-UY'))}`
+    await sendMessage(chatId,
+      `✅ *${escapeMarkdown(result.description)}* guardado como ${escapeMarkdown(label)}\n${amtStr}`,
+      'MarkdownV2'
+    )
+    return NextResponse.json({ ok: true })
+  }
+
+  // ── Guardar gastos ────────────────────────────────────────────────────────
   const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(phoneUser.user_id)
   const isGuille = !!OWED_USER_EMAIL && authUser?.user?.email === OWED_USER_EMAIL
 
@@ -218,7 +253,7 @@ export async function POST(req: NextRequest) {
         user_id:      phoneUser.user_id,
         description:  installments > 1 ? `${item.description} (${i + 1}/${installments})` : item.description,
         amount:       installmentAmount,
-        currency:     'UYU',
+        currency:     item.currency,
         bank:         item.bank,
         month,
         expense_date: expenseDate,
@@ -265,27 +300,37 @@ export async function POST(req: NextRequest) {
       const d = String(now.getUTCDate()).padStart(2, '0')
       return `${y}-${m}-${d}`
     })()
+    const amtPrefix  = item.currency === 'USD' ? 'USD ' : '\\$ '
+    const cuotaPrefix = item.currency === 'USD' ? 'USD ' : '\\$'
     const bankLine   = item.bank ? `\nTarjeta: ${escapeMarkdown(item.bank)}` : '\nPago: Efectivo'
     const catLine    = item.category ? `\nCategoría: ${escapeMarkdown(CATEGORY_LABELS[item.category] ?? item.category)}` : ''
     const owedLine   = isGuille && item.bank ? '\n💸 Marcado como Debes a Fer' : ''
-    const cuotasLine = installments > 1 ? `\n${installments} cuotas de \\$${escapeMarkdown(installmentAmount.toLocaleString('es-UY'))}` : ''
+    const cuotasLine = installments > 1 ? `\n${installments} cuotas de ${cuotaPrefix}${escapeMarkdown(installmentAmount.toLocaleString('es-UY'))}` : ''
     const dateLine   = item.date ? `\nFecha: ${escapeMarkdown(expenseDate.split('-').reverse().join('/'))}` : ''
     await sendMessage(chatId,
       `✅ *Gasto guardado*\n\n` +
       `*${escapeMarkdown(item.description)}*\n` +
-      `\\$ ${escapeMarkdown(item.amount.toLocaleString('es-UY'))}` +
+      `${amtPrefix}${escapeMarkdown(item.amount.toLocaleString('es-UY'))}` +
       `${cuotasLine}${bankLine}${catLine}${dateLine}${owedLine}`,
       'MarkdownV2',
       editButtons
     )
   } else {
-    const lines = result.items.map(item =>
-      `• *${escapeMarkdown(item.description)}* \\$${escapeMarkdown(item.amount.toLocaleString('es-UY'))}` +
-      (item.bank ? ` \\(${escapeMarkdown(item.bank)}\\)` : '')
-    ).join('\n')
-    const total = result.items.reduce((s, i) => s + i.amount, 0)
+    const lines = result.items.map(item => {
+      const amtStr = item.currency === 'USD'
+        ? `USD ${escapeMarkdown(item.amount.toLocaleString('es-UY'))}`
+        : `\\$${escapeMarkdown(item.amount.toLocaleString('es-UY'))}`
+      return `• *${escapeMarkdown(item.description)}* ${amtStr}` +
+        (item.bank ? ` \\(${escapeMarkdown(item.bank)}\\)` : '')
+    }).join('\n')
+    const totalUYU = result.items.filter(i => i.currency === 'UYU').reduce((s, i) => s + i.amount, 0)
+    const totalUSD = result.items.filter(i => i.currency === 'USD').reduce((s, i) => s + i.amount, 0)
+    const totalParts = [
+      totalUYU > 0 ? `\\$${escapeMarkdown(totalUYU.toLocaleString('es-UY'))}` : null,
+      totalUSD > 0 ? `USD ${escapeMarkdown(totalUSD.toLocaleString('es-UY'))}` : null,
+    ].filter(Boolean).join(' \\+ ')
     await sendMessage(chatId,
-      `✅ *${result.items.length} gastos guardados*\n\n${lines}\n\n*Total: \\$${escapeMarkdown(total.toLocaleString('es-UY'))}*`,
+      `✅ *${result.items.length} gastos guardados*\n\n${lines}\n\n*Total: ${totalParts}*`,
       'MarkdownV2',
       editButtons
     )
@@ -498,7 +543,7 @@ Respondé ÚNICAMENTE con este JSON, sin texto adicional:
   }
 
   const systemPrompt = `Sos un asistente de gastos personales. Hoy es ${todayStr}.
-Tu tarea: determinar si el mensaje contiene GASTOS a registrar o una CONSULTA sobre gastos.
+Tu tarea: determinar si el mensaje contiene GASTOS, INGRESOS, AHORROS o una CONSULTA.
 
 ═══ GASTOS ═══
 Si hay uno o más gastos, respondé con este JSON (SIEMPRE con "items" como array):
@@ -508,6 +553,7 @@ Si hay uno o más gastos, respondé con este JSON (SIEMPRE con "items" como arra
     {
       "description": "nombre corto del gasto (2-4 palabras)",
       "amount": número (solo dígitos, sin símbolos de moneda),
+      "currency": "UYU" | "USD",
       "bank": "Itaú" | "BROU" | "Scotiabank" | null,
       "category": "comida"|"nafta"|"ropa"|"hogar"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza" | null,
       "installments": número de cuotas o null,
@@ -516,9 +562,14 @@ Si hay uno o más gastos, respondé con este JSON (SIEMPRE con "items" como arra
   ]
 }
 
+CRÍTICO — Moneda:
+- "dólares", "dolar", "USD", "U$S", "us$", "usd" → currency: "USD"
+- Sin mención de moneda o "pesos", "$" → currency: "UYU"
+- "gasté 30 dólares" → amount: 30, currency: "USD"
+- "pizza $350" → amount: 350, currency: "UYU"
+
 CRÍTICO — Extracción de monto (ignorar $, $U, U$S):
 - "compré un helado por $150" → amount: 150
-- "me compré unas sandalias por $3000" → amount: 3000
 - "me hice las uñas por $750" → amount: 750
 - "gasté $300 en la cena" → amount: 300
 - "me salió 200 la pizza" → amount: 200
@@ -528,6 +579,18 @@ CRÍTICO — Categoría "belleza": uñas, peluquería, corte de pelo, tintura, s
 CRÍTICO — Múltiples gastos: cada gasto mencionado va como un item separado:
 - "helado por 150 y milanesa por 300" → items con 2 entradas
 - "hamburguesa 100 y papas 50 con itau" → items con 2 entradas, ambas con bank:"Itaú"
+
+═══ INGRESOS ═══
+Si el mensaje es un ingreso recibido (sueldo, cobro, freelance, salario):
+{"type":"income","description":"Sueldo"|descripción corta,"amount":número,"currency":"UYU"|"USD"}
+- "cobré el sueldo de 50000" → type:"income", currency:"UYU"
+- "recibí 1000 dólares de freelance" → type:"income", currency:"USD"
+
+═══ AHORROS ═══
+Si el mensaje indica que ahorró o guardó dinero:
+{"type":"savings","description":"Ahorro"|descripción corta,"amount":número,"currency":"UYU"|"USD"}
+- "ahorré 5000 este mes" → type:"savings", currency:"UYU"
+- "guardé 200 dólares" → type:"savings", currency:"USD"
 
 ═══ CONSULTAS ═══
 Si es una pregunta sobre gastos, respondé con:
@@ -585,6 +648,16 @@ Si es una pregunta sobre gastos, respondé con:
       }
     }
 
+    if (parsed.type === 'income' || parsed.type === 'savings') {
+      if (!parsed.amount || Number(parsed.amount) <= 0) return null
+      return {
+        type:        parsed.type,
+        description: parsed.description ?? (parsed.type === 'income' ? 'Sueldo' : 'Ahorro'),
+        amount:      Number(parsed.amount),
+        currency:    parsed.currency === 'USD' ? 'USD' : 'UYU',
+      }
+    }
+
     // Normalizar: soportar tanto {type:"expenses", items:[...]} como formato singular
     let rawItems: unknown[] = []
     if (parsed.type === 'expenses' && Array.isArray(parsed.items)) {
@@ -593,11 +666,12 @@ Si es una pregunta sobre gastos, respondé con:
       rawItems = [parsed]
     }
 
-    const items: ExpenseItem[] = (rawItems as { description?: string; amount?: unknown; bank?: string | null; category?: string | null; installments?: unknown; date?: string | null }[])
+    const items: ExpenseItem[] = (rawItems as { description?: string; amount?: unknown; currency?: string; bank?: string | null; category?: string | null; installments?: unknown; date?: string | null }[])
       .filter(i => i.amount && Number(i.amount) > 0)
       .map(i => ({
         description:  i.description ?? 'Gasto',
         amount:       Number(i.amount),
+        currency:     i.currency === 'USD' ? 'USD' : 'UYU',
         bank:         i.bank ?? null,
         category:     i.category ?? null,
         installments: i.installments ? Number(i.installments) : null,

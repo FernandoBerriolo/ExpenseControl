@@ -3,6 +3,7 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY!
 export type ExpenseItem = {
   description: string
   amount: number
+  currency: 'UYU' | 'USD'
   bank: string | null
   category: string | null
   installments: number | null
@@ -16,7 +17,13 @@ export type ParsedQuery = {
   category: string | null
   month: string
 }
-export type ParseResult = ParsedExpenses | ParsedQuery | null
+export type ParsedEntry = {
+  type: 'income' | 'savings'
+  description: string
+  amount: number
+  currency: 'UYU' | 'USD'
+}
+export type ParseResult = ParsedExpenses | ParsedQuery | ParsedEntry | null
 
 export async function parseExpenseMessage(text: string): Promise<ParseResult> {
   const today = new Date(Date.now() - 3 * 60 * 60 * 1000)
@@ -24,7 +31,7 @@ export async function parseExpenseMessage(text: string): Promise<ParseResult> {
   const monthStr = todayStr.slice(0, 7)
 
   const systemPrompt = `Sos un asistente de gastos personales. Hoy es ${todayStr}.
-Tu tarea: determinar si el mensaje contiene GASTOS a registrar o una CONSULTA sobre gastos.
+Tu tarea: determinar si el mensaje contiene GASTOS, INGRESOS, AHORROS o una CONSULTA.
 
 ═══ GASTOS ═══
 Si hay uno o más gastos, respondé con este JSON (SIEMPRE con "items" como array):
@@ -34,6 +41,7 @@ Si hay uno o más gastos, respondé con este JSON (SIEMPRE con "items" como arra
     {
       "description": "nombre corto del gasto (2-4 palabras)",
       "amount": número (solo dígitos, sin símbolos de moneda),
+      "currency": "UYU" | "USD",
       "bank": "Itaú" | "BROU" | "Scotiabank" | null,
       "category": "comida"|"nafta"|"ropa"|"hogar"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza" | null,
       "installments": número de cuotas o null,
@@ -41,6 +49,13 @@ Si hay uno o más gastos, respondé con este JSON (SIEMPRE con "items" como arra
     }
   ]
 }
+
+CRÍTICO — Moneda:
+- Si mencionan "dólares", "dolar", "dolares", "USD", "U$S", "us$", "usd" → currency: "USD"
+- Si no mencionan moneda específica o dicen "pesos", "$" → currency: "UYU"
+- "gasté 30 dólares" → amount: 30, currency: "USD"
+- "pagué U$S 50 en Spotify" → amount: 50, currency: "USD"
+- "pizza $350" → amount: 350, currency: "UYU"
 
 CRÍTICO — Extracción de monto (ignorar $, $U, U$S):
 - "compré un helado por $150" → amount: 150
@@ -52,6 +67,31 @@ CRÍTICO — Categoría "belleza": uñas, peluquería, corte de pelo, tintura, s
 
 CRÍTICO — Múltiples gastos: cada gasto mencionado va como un item separado:
 - "helado por 150 y milanesa por 300" → items con 2 entradas
+
+═══ INGRESOS ═══
+Si el mensaje es un ingreso de dinero recibido (sueldo, cobro, freelance, salario):
+{
+  "type": "income",
+  "description": "Sueldo" | "Freelance" | descripción corta,
+  "amount": número,
+  "currency": "UYU" | "USD"
+}
+- "cobré el sueldo de 50000" → type: "income", currency: "UYU"
+- "me depositaron el sueldo, 80000 pesos" → type: "income", currency: "UYU"
+- "recibí 1000 dólares de freelance" → type: "income", currency: "USD"
+- "ingresé mi sueldo de 60000" → type: "income"
+
+═══ AHORROS ═══
+Si el mensaje indica que ahorró o guardó dinero:
+{
+  "type": "savings",
+  "description": "Ahorro" | descripción corta,
+  "amount": número,
+  "currency": "UYU" | "USD"
+}
+- "ahorré 5000 este mes" → type: "savings", currency: "UYU"
+- "guardé 200 dólares" → type: "savings", currency: "USD"
+- "puse 10000 en el ahorro" → type: "savings"
 
 ═══ CONSULTAS ═══
 Si es una pregunta sobre gastos, respondé con:
@@ -104,6 +144,16 @@ Si es una pregunta sobre gastos, respondé con:
       return { type: 'query', query: parsed.query, category: parsed.category ?? null, month: parsed.month }
     }
 
+    if (parsed.type === 'income' || parsed.type === 'savings') {
+      if (!parsed.amount || Number(parsed.amount) <= 0) return null
+      return {
+        type: parsed.type,
+        description: parsed.description ?? (parsed.type === 'income' ? 'Sueldo' : 'Ahorro'),
+        amount: Number(parsed.amount),
+        currency: parsed.currency === 'USD' ? 'USD' : 'UYU',
+      }
+    }
+
     let rawItems: unknown[] = []
     if (parsed.type === 'expenses' && Array.isArray(parsed.items)) {
       rawItems = parsed.items
@@ -111,11 +161,12 @@ Si es una pregunta sobre gastos, respondé con:
       rawItems = [parsed]
     }
 
-    const items: ExpenseItem[] = (rawItems as { description?: string; amount?: unknown; bank?: string | null; category?: string | null; installments?: unknown; date?: string | null }[])
+    const items: ExpenseItem[] = (rawItems as { description?: string; amount?: unknown; currency?: string; bank?: string | null; category?: string | null; installments?: unknown; date?: string | null }[])
       .filter(i => i.amount && Number(i.amount) > 0)
       .map(i => ({
         description:  i.description ?? 'Gasto',
         amount:       Number(i.amount),
+        currency:     i.currency === 'USD' ? 'USD' : 'UYU',
         bank:         i.bank ?? null,
         category:     i.category ?? null,
         installments: i.installments ? Number(i.installments) : null,

@@ -15,12 +15,13 @@ const CATEGORY_LABELS: Record<string, string> = {
 }
 
 type ExpenseItem = {
-  description: string; amount: number; bank: string | null
+  description: string; amount: number; currency: 'UYU' | 'USD'; bank: string | null
   category: string | null; installments: number | null; date: string | null
 }
 type ExpensesResult = { type: 'expenses'; items: ExpenseItem[] }
 type QueryResult    = { type: 'query'; query: 'owed' | 'category_total' | 'monthly_total'; category: string | null; month: string }
-type AIResult       = ExpensesResult | QueryResult | null
+type EntryResult    = { type: 'income' | 'savings'; description: string; amount: number; currency: 'UYU' | 'USD' }
+type AIResult       = ExpensesResult | QueryResult | EntryResult | null
 
 // ─── Handler principal ────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
@@ -127,8 +128,29 @@ export async function POST(req: NextRequest) {
     return twiml(reply)
   }
 
-  // ── Guardar gastos ─────────────────────────────────────────────────────────
+  // ── Guardar ingreso o ahorro ───────────────────────────────────────────────
   const now = new Date(Date.now() - 3 * 60 * 60 * 1000)
+
+  if (result.type === 'income' || result.type === 'savings') {
+    const month = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`
+    const { error } = await supabaseAdmin.from('incomes').insert({
+      user_id:     phoneUser.user_id,
+      description: result.description,
+      amount:      result.amount,
+      currency:    result.currency,
+      month,
+      income_date: `${month}-01`,
+      type:        result.type,
+    })
+    if (error) return twiml('❌ Error al guardar. Intentá de nuevo.')
+    const label = result.type === 'income' ? '💼 Ingreso' : '🏦 Ahorro'
+    const amtStr = result.currency === 'USD'
+      ? `USD ${result.amount.toLocaleString('es-UY')}`
+      : `$${result.amount.toLocaleString('es-UY')}`
+    return twiml(`✅ ${result.description} guardado como ${label}\n${amtStr}`)
+  }
+
+  // ── Guardar gastos ─────────────────────────────────────────────────────────
   const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(phoneUser.user_id)
   const isOwed = !!OWED_USER_EMAIL && authUser?.user?.email === OWED_USER_EMAIL
 
@@ -144,7 +166,7 @@ export async function POST(req: NextRequest) {
       allEntries.push({
         user_id: phoneUser.user_id,
         description: installments > 1 ? `${item.description} (${i + 1}/${installments})` : item.description,
-        amount: installmentAmount, currency: 'UYU', bank: item.bank,
+        amount: installmentAmount, currency: item.currency, bank: item.bank,
         month, expense_date: expenseDate, category: item.category,
         is_owed: isOwed && !!item.bank,
       })
@@ -169,10 +191,11 @@ export async function POST(req: NextRequest) {
     const item = result.items[0]
     const installments = item.installments && item.installments > 1 ? item.installments : 1
     const installmentAmount = Math.round((item.amount / installments) * 100) / 100
+    const fmt = (n: number) => item.currency === 'USD' ? `USD ${n.toLocaleString('es-UY')}` : `$${n.toLocaleString('es-UY')}`
     const parts = [
       `✅ *${item.description}* guardado`,
-      `$${item.amount.toLocaleString('es-UY')}`,
-      installments > 1 ? `${installments} cuotas de $${installmentAmount.toLocaleString('es-UY')}` : null,
+      fmt(item.amount),
+      installments > 1 ? `${installments} cuotas de ${fmt(installmentAmount)}` : null,
       item.bank ? `Tarjeta: ${item.bank}` : 'Efectivo',
       item.category ? CATEGORY_LABELS[item.category] : null,
       item.date ? `Fecha: ${item.date.split('-').reverse().join('/')}` : null,
@@ -181,9 +204,17 @@ export async function POST(req: NextRequest) {
     return twiml(parts + actionHint)
   }
 
-  const lines = result.items.map(i => `• ${i.description}: $${i.amount.toLocaleString('es-UY')}`).join('\n')
-  const total = result.items.reduce((s, i) => s + i.amount, 0)
-  return twiml(`✅ ${result.items.length} gastos guardados\n${lines}\nTotal: $${total.toLocaleString('es-UY')}${actionHint}`)
+  const lines = result.items.map(i => {
+    const amt = i.currency === 'USD' ? `USD ${i.amount.toLocaleString('es-UY')}` : `$${i.amount.toLocaleString('es-UY')}`
+    return `• ${i.description}: ${amt}`
+  }).join('\n')
+  const totalUYU = result.items.filter(i => i.currency === 'UYU').reduce((s, i) => s + i.amount, 0)
+  const totalUSD = result.items.filter(i => i.currency === 'USD').reduce((s, i) => s + i.amount, 0)
+  const totals = [
+    totalUYU > 0 ? `$${totalUYU.toLocaleString('es-UY')}` : null,
+    totalUSD > 0 ? `USD ${totalUSD.toLocaleString('es-UY')}` : null,
+  ].filter(Boolean).join(' + ')
+  return twiml(`✅ ${result.items.length} gastos guardados\n${lines}\nTotal: ${totals}${actionHint}`)
 }
 
 // ─── Consultas ────────────────────────────────────────────────────────────────
@@ -255,14 +286,21 @@ async function parseWithAI(text: string, originalExpense: Record<string, unknown
   }
 
   const systemPrompt = `Sos un asistente de gastos personales. Hoy es ${todayStr}.
-Tu tarea: determinar si el mensaje contiene GASTOS a registrar o una CONSULTA sobre gastos.
+Tu tarea: determinar si el mensaje contiene GASTOS, INGRESOS, AHORROS o una CONSULTA.
 
 ═══ GASTOS ═══
-{"type":"expenses","items":[{"description":"nombre corto (2-4 palabras)","amount":número,"bank":"Itaú"|"BROU"|"Scotiabank"|null,"category":"comida"|"nafta"|"ropa"|"hogar"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza"|null,"installments":número o null,"date":"YYYY-MM-DD" o null}]}
+{"type":"expenses","items":[{"description":"nombre corto (2-4 palabras)","amount":número,"currency":"UYU"|"USD","bank":"Itaú"|"BROU"|"Scotiabank"|null,"category":"comida"|"nafta"|"ropa"|"hogar"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza"|null,"installments":número o null,"date":"YYYY-MM-DD" o null}]}
 
+CRÍTICO — Moneda: "dólares","dolar","USD","U$S","us$","usd"→currency:"USD" | sin mención o "pesos"→currency:"UYU"
 CRÍTICO — ignorar $, $U, U$S al extraer monto
 CRÍTICO — "belleza": uñas, peluquería, cremas, maquillaje, manicura, pedicura, perfume, skincare
 CRÍTICO — múltiples gastos → múltiples items
+
+═══ INGRESOS ═══
+Si es sueldo, cobro recibido, freelance: {"type":"income","description":"Sueldo"|descripción corta,"amount":número,"currency":"UYU"|"USD"}
+
+═══ AHORROS ═══
+Si ahorró o guardó dinero: {"type":"savings","description":"Ahorro"|descripción corta,"amount":número,"currency":"UYU"|"USD"}
 
 ═══ CONSULTAS ═══
 {"type":"query","query":"owed"|"category_total"|"monthly_total","category":null o categoría,"month":"YYYY-MM"}
@@ -288,12 +326,21 @@ CRÍTICO — múltiples gastos → múltiples items
       if (!parsed.query || !parsed.month) return null
       return { type: 'query', query: parsed.query, category: parsed.category ?? null, month: parsed.month }
     }
+    if (parsed.type === 'income' || parsed.type === 'savings') {
+      if (!parsed.amount || Number(parsed.amount) <= 0) return null
+      return {
+        type: parsed.type,
+        description: parsed.description ?? (parsed.type === 'income' ? 'Sueldo' : 'Ahorro'),
+        amount: Number(parsed.amount),
+        currency: parsed.currency === 'USD' ? 'USD' : 'UYU',
+      }
+    }
     let rawItems: unknown[] = []
     if (parsed.type === 'expenses' && Array.isArray(parsed.items)) rawItems = parsed.items
     else if (parsed.amount && Number(parsed.amount) > 0) rawItems = [parsed]
-    const items: ExpenseItem[] = (rawItems as { description?: string; amount?: unknown; bank?: string | null; category?: string | null; installments?: unknown; date?: string | null }[])
+    const items: ExpenseItem[] = (rawItems as { description?: string; amount?: unknown; currency?: string; bank?: string | null; category?: string | null; installments?: unknown; date?: string | null }[])
       .filter(i => i.amount && Number(i.amount) > 0)
-      .map(i => ({ description: i.description ?? 'Gasto', amount: Number(i.amount), bank: i.bank ?? null, category: i.category ?? null, installments: i.installments ? Number(i.installments) : null, date: i.date ?? null }))
+      .map(i => ({ description: i.description ?? 'Gasto', amount: Number(i.amount), currency: i.currency === 'USD' ? 'USD' : 'UYU', bank: i.bank ?? null, category: i.category ?? null, installments: i.installments ? Number(i.installments) : null, date: i.date ?? null }))
     if (items.length === 0) return null
     return { type: 'expenses', items }
   } catch { return null }

@@ -28,6 +28,7 @@ export type Income = {
   currency: 'UYU' | 'USD'
   month: string        // YYYY-MM
   income_date: string | null
+  type: 'income' | 'savings'
   created_at: string
 }
 
