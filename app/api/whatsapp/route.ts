@@ -290,6 +290,11 @@ async function handleQuery(userId: string, q: QueryResult): Promise<string> {
 
 // ─── Claude parsing ───────────────────────────────────────────────────────────
 async function parseWithAI(text: string, originalExpense: Record<string, unknown> | null = null, cards: string[] = ['Itaú', 'BROU', 'Scotiabank'], defaultCurrency: 'UYU' | 'USD' | 'EUR' = 'UYU'): Promise<AIResult> {
+  const today = new Date(Date.now() - 3 * 60 * 60 * 1000)
+  const todayStr = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`
+  const monthStr = todayStr.slice(0, 7)
+  const cardOptions = cards.length > 0 ? cards.map(c => `"${c}"`).join(' | ') + ' | null' : 'null'
+  
   const result = await parseExpenseMessage(text, cards, defaultCurrency)
   
   if (result) return result
