@@ -18,8 +18,14 @@ CREATE TABLE IF NOT EXISTS user_settings (
 );
 
 ALTER TABLE user_settings ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users manage own settings" ON user_settings
-  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users insert own settings" ON user_settings
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users update own settings" ON user_settings
+  FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users select own settings" ON user_settings
+  FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users delete own settings" ON user_settings
+  FOR DELETE USING (auth.uid() = user_id);
 
 -- 3. Payment methods table
 CREATE TABLE IF NOT EXISTS payment_methods (
@@ -33,8 +39,14 @@ CREATE TABLE IF NOT EXISTS payment_methods (
 );
 
 ALTER TABLE payment_methods ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users manage own payment methods" ON payment_methods
-  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users insert own payment methods" ON payment_methods
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users select own payment methods" ON payment_methods
+  FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users update own payment methods" ON payment_methods
+  FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users delete own payment methods" ON payment_methods
+  FOR DELETE USING (auth.uid() = user_id);
 
 CREATE INDEX IF NOT EXISTS payment_methods_user_idx ON payment_methods(user_id);
 

@@ -58,6 +58,7 @@ export default function OnboardingSetup({
     setSaving(true)
     setError('')
     try {
+      // Step 1: Guardar user settings
       const { error: settingsErr } = await supabase.from('user_settings').upsert({
         user_id:           userId,
         currencies,
@@ -65,9 +66,12 @@ export default function OnboardingSetup({
         is_legacy:         false,
         setup_completed:   true,
       })
-      if (settingsErr) throw settingsErr
+      if (settingsErr) {
+        console.error('❌ Error guardando user_settings:', settingsErr)
+        throw new Error(`Error en configuración: ${settingsErr.message}`)
+      }
 
-      // Always insert cash method
+      // Step 2: Preparar métodos de pago
       const methods: { user_id: string; name: string; type: string; closing_day: number | null; sort_order: number }[] = [
         { user_id: userId, name: 'Efectivo', type: 'cash', closing_day: null, sort_order: 0 },
       ]
@@ -81,24 +85,40 @@ export default function OnboardingSetup({
         })
       })
 
-      // Delete old payment methods first to avoid duplicates
-      await supabase.from('payment_methods').delete().eq('user_id', userId)
+      // Step 3: Borrar métodos de pago antiguos primero
+      const { error: deleteErr } = await supabase.from('payment_methods').delete().eq('user_id', userId)
+      if (deleteErr) {
+        console.error('❌ Error borrando payment_methods:', deleteErr)
+        throw new Error(`Error al limpiar tarjetas: ${deleteErr.message}`)
+      }
       
+      // Step 4: Guardar nuevos métodos de pago
       const { data: savedMethods, error: pmErr } = await supabase
         .from('payment_methods')
         .insert(methods)
         .select('*')
-      if (pmErr) throw pmErr
+      if (pmErr) {
+        console.error('❌ Error guardando payment_methods:', pmErr)
+        throw new Error(`Error al guardar tarjetas: ${pmErr.message}`)
+      }
 
-      const { data: settingsData } = await supabase
+      // Step 5: Obtener configuración guardada
+      const { data: settingsData, error: fetchErr } = await supabase
         .from('user_settings')
         .select('*')
         .eq('user_id', userId)
         .single()
+      
+      if (fetchErr) {
+        console.error('❌ Error obteniendo user_settings:', fetchErr)
+        throw new Error(`Error al obtener configuración: ${fetchErr.message}`)
+      }
 
       onComplete(settingsData as UserSettings, (savedMethods ?? []) as PaymentMethod[])
-    } catch {
-      setError('Error al guardar. Intentá de nuevo.')
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Error desconocido'
+      console.error('❌ Error en handleSave:', message)
+      setError(message || 'Error al guardar. Intentá de nuevo.')
     } finally {
       setSaving(false)
     }
