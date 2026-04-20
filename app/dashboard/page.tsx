@@ -46,6 +46,12 @@ function formatMoney(amount: number, currency: 'UYU' | 'USD' | 'EUR') {
   return `$ ${amount.toLocaleString('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+function getCurrencyLabel(currency: 'UYU' | 'USD' | 'EUR') {
+  if (currency === 'USD') return '$ Dólares'
+  if (currency === 'EUR') return '€ Euros'
+  return '$ Pesos'
+}
+
 function getCurrentMonth() {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
@@ -1066,7 +1072,7 @@ export default function Dashboard() {
                       style={formCurrency === 'UYU'
                         ? { borderColor: '#667eea', background: '#e8edff', color: '#667eea' }
                         : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
-                      💰 Pesos
+                      $ Pesos
                     </button>
                   )}
                   {userCurrencies.includes('USD') && (
@@ -1075,7 +1081,7 @@ export default function Dashboard() {
                       style={formCurrency === 'USD'
                         ? { borderColor: '#764ba2', background: '#f3e8ff', color: '#764ba2' }
                         : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
-                      💵 Dólares
+                      $ Dólares
                     </button>
                   )}
                   {userCurrencies.includes('EUR') && (
@@ -1084,7 +1090,7 @@ export default function Dashboard() {
                       style={formCurrency === 'EUR'
                         ? { borderColor: '#0ea5e9', background: '#e0f2fe', color: '#0ea5e9' }
                         : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
-                      💶 Euros
+                      € Euros
                     </button>
                   )}
                 </div>
@@ -1147,7 +1153,7 @@ export default function Dashboard() {
               {/* Monto */}
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1.5">
-                  {formInstallments > 1 ? `Monto total (${formCurrency === 'UYU' ? '$' : 'USD'})` : `Monto (${formCurrency === 'UYU' ? '$' : 'USD'})`}
+                  {formInstallments > 1 ? `Monto total (${getCurrencyLabel(formCurrency)})` : `Monto (${getCurrencyLabel(formCurrency)})`}
                 </label>
                 <input
                   type="number"
@@ -1251,7 +1257,7 @@ export default function Dashboard() {
                       style={incomeCurrency === 'UYU'
                         ? { borderColor: '#667eea', background: '#e8edff', color: '#667eea' }
                         : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
-                      💰 Pesos
+                      $ Pesos
                     </button>
                   )}
                   {userCurrencies.includes('USD') && (
@@ -1260,7 +1266,7 @@ export default function Dashboard() {
                       style={incomeCurrency === 'USD'
                         ? { borderColor: '#764ba2', background: '#f3e8ff', color: '#764ba2' }
                         : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
-                      💵 Dólares
+                      $ Dólares
                     </button>
                   )}
                   {userCurrencies.includes('EUR') && (
@@ -1269,7 +1275,7 @@ export default function Dashboard() {
                       style={incomeCurrency === 'EUR'
                         ? { borderColor: '#0ea5e9', background: '#e0f2fe', color: '#0ea5e9' }
                         : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
-                      💶 Euros
+                      € Euros
                     </button>
                   )}
                 </div>
@@ -1277,7 +1283,7 @@ export default function Dashboard() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1.5">
-                  Monto ({incomeCurrency === 'UYU' ? '$' : 'USD'})
+                  Monto ({getCurrencyLabel(incomeCurrency)})
                 </label>
                 <input
                   type="number"

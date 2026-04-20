@@ -1,5 +1,4 @@
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY!
-const GEMINI_KEY    = process.env.GEMINI_API_KEY!
 
 export type ExpenseItem = {
   description: string
@@ -161,7 +160,7 @@ export async function analyzeReceiptImage(
   mimeType: string,
   cards: string[] = [],
 ): Promise<ParseResult> {
-  const cardList = cards.length > 0 ? cards.join(', ') : 'ninguna tarjeta específica'
+  const cardOptions = cards.length > 0 ? cards.map(c => `"${c}"`).join(' | ') + ' | null' : 'null'
   const prompt = `Analizá esta imagen de un ticket, factura o recibo.
 Identificá todos los gastos y devolvé ÚNICAMENTE este JSON (sin markdown, sin texto extra):
 {
@@ -170,32 +169,38 @@ Identificá todos los gastos y devolvé ÚNICAMENTE este JSON (sin markdown, sin
     "description": "nombre corto del gasto (2-4 palabras)",
     "amount": número total,
     "currency": "UYU" | "USD" | "EUR",
-    "bank": null,
+    "bank": ${cardOptions},
     "category": "comida"|"nafta"|"ropa"|"hogar"|"alquiler"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza"|null,
     "installments": null,
     "date": "YYYY-MM-DD" si se ve la fecha, si no null
   }]
 }
 Si no se pueden identificar gastos claros en la imagen, devolvé: {"error":"no_expense"}
-Tarjetas disponibles: ${cardList}`
+Tarjetas disponibles: ${cards.join(', ') || 'ninguna'}`
 
   try {
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [
-            { inlineData: { mimeType, data: base64 } },
-            { text: prompt },
-          ]}],
-          generationConfig: { temperature: 0 },
-        }),
-      }
-    )
-    const gdata = await geminiRes.json()
-    const raw = gdata.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type':      'application/json',
+        'x-api-key':         ANTHROPIC_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model:      'claude-haiku-4-5-20251001',
+        max_tokens: 512,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64 } },
+            { type: 'text',  text: prompt },
+          ],
+        }],
+      }),
+    })
+    const data = await res.json()
+    if (res.status !== 200) return null
+    const raw = data.content?.[0]?.text?.trim()
     if (!raw) return null
 
     const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
