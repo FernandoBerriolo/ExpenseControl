@@ -526,6 +526,8 @@ async function parseWithAI(text: string | null, originalExpense: Record<string, 
   
   const result = await parseExpenseMessage(text, cards, defaultCurrency)
   if (result) return result
+  
+  if (originalExpense) {
     const editPrompt = `El usuario tenía registrado este gasto:
 ${JSON.stringify(originalExpense)}
 
@@ -572,7 +574,9 @@ Respondé ÚNICAMENTE con este JSON, sin texto adicional:
         return { type: 'expenses', items: [{ description: i.description, amount: Number(i.amount), currency: normCurrency(i.currency), bank: i.bank ?? null, category: i.category ?? null, installments: null, date: null }] }
       }
       return null
-    } catch { return null }
+    } catch {
+      return null
+    }
   }
 
   const cardOptions = cards.length > 0 ? cards.map(c => `"${c}"`).join(' | ') + ' | null' : 'null'
