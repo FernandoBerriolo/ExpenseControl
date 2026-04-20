@@ -2,25 +2,54 @@
 import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 
-type Message = { role: 'user' | 'bot'; text: string; saved?: boolean }
+type Message = { role: 'user' | 'bot'; text: string; saved?: boolean; isImage?: boolean }
 
 export default function ChatWidget({ onExpenseSaved, hidden }: { onExpenseSaved?: () => void; hidden?: boolean }) {
   const [open, setOpen]         = useState(false)
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'bot', text: '¡Hola! Contame qué gastaste o preguntame sobre tus gastos 💬' }
+    { role: 'bot', text: '¡Hola! Contame qué gastaste, mandá una foto de un recibo, o preguntame sobre tus gastos 💬' }
   ])
-  const [input, setInput]   = useState('')
-  const [loading, setLoading] = useState(false)
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const [input, setInput]       = useState('')
+  const [loading, setLoading]   = useState(false)
+  const bottomRef  = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, open])
 
-  // Cerrar cuando el modal de agregar gasto se abre
   useEffect(() => {
     if (hidden) setOpen(false)
   }, [hidden])
+
+  async function callApi(bodyPayload: object) {
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify(bodyPayload),
+    })
+    return res.json()
+  }
+
+  async function sendImage(file: File) {
+    if (loading) return
+    setLoading(true)
+    setMessages((prev: Message[]) => [...prev, { role: 'user', text: '📷 Foto de recibo', isImage: true }])
+    try {
+      const base64 = await fileToBase64(file)
+      const data = await callApi({ image: { data: base64, mimeType: file.type } })
+      setMessages((prev: Message[]) => [...prev, { role: 'bot', text: data.reply ?? '❌ Error inesperado', saved: data.saved }])
+      if (data.saved && onExpenseSaved) onExpenseSaved()
+    } catch {
+      setMessages((prev: Message[]) => [...prev, { role: 'bot', text: '❌ No se pudo conectar. Revisá tu conexión.' }])
+    } finally {
+      setLoading(false)
+    }
+  }
 
   async function send(text: string) {
     if (!text.trim() || loading) return
@@ -29,16 +58,7 @@ export default function ChatWidget({ onExpenseSaved, hidden }: { onExpenseSaved?
     setMessages((prev: Message[]) => [...prev, { role: 'user', text: userMsg }])
     setLoading(true)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
-        },
-        body: JSON.stringify({ message: userMsg }),
-      })
-      const data = await res.json()
+      const data = await callApi({ message: userMsg })
       setMessages((prev: Message[]) => [...prev, { role: 'bot', text: data.reply ?? '❌ Error inesperado', saved: data.saved }])
       if (data.saved && onExpenseSaved) onExpenseSaved()
     } catch {
@@ -52,7 +72,6 @@ export default function ChatWidget({ onExpenseSaved, hidden }: { onExpenseSaved?
 
   return (
     <>
-      {/* Backdrop para cerrar al tocar fuera */}
       {open && (
         <div
           onClick={() => setOpen(false)}
@@ -60,7 +79,6 @@ export default function ChatWidget({ onExpenseSaved, hidden }: { onExpenseSaved?
         />
       )}
 
-      {/* Botón flotante — abajo a la izquierda */}
       <button
         onClick={() => setOpen(o => !o)}
         style={{
@@ -75,7 +93,6 @@ export default function ChatWidget({ onExpenseSaved, hidden }: { onExpenseSaved?
         {open ? '✕' : '💬'}
       </button>
 
-      {/* Panel del chat — abre desde la izquierda */}
       {open && (
         <div style={{
           position: 'fixed', bottom: 100, left: 24, zIndex: 1001,
@@ -85,7 +102,6 @@ export default function ChatWidget({ onExpenseSaved, hidden }: { onExpenseSaved?
           display: 'flex', flexDirection: 'column',
           overflow: 'hidden', border: '1px solid #e5e7eb',
         }}>
-          {/* Header */}
           <div style={{
             padding: '12px 16px', background: 'linear-gradient(135deg, #10b981, #059669)',
             color: '#fff', fontWeight: 600, fontSize: 15,
@@ -94,7 +110,6 @@ export default function ChatWidget({ onExpenseSaved, hidden }: { onExpenseSaved?
             <span>✨</span> Asistente de gastos
           </div>
 
-          {/* Mensajes */}
           <div style={{ padding: 12, overflowY: 'auto', maxHeight: 340, display: 'flex', flexDirection: 'column', gap: 8 }}>
             {messages.map((m, i) => (
               <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
@@ -120,8 +135,32 @@ export default function ChatWidget({ onExpenseSaved, hidden }: { onExpenseSaved?
             <div ref={bottomRef} />
           </div>
 
-          {/* Input */}
           <div style={{ padding: '8px 12px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={e => {
+                const file = e.target.files?.[0]
+                if (file) sendImage(file)
+                e.target.value = ''
+              }}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading}
+              title="Subir foto de recibo"
+              style={{
+                width: 36, height: 36, borderRadius: 8, border: 'none',
+                cursor: loading ? 'default' : 'pointer',
+                background: '#f0fdf4', fontSize: 18,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, opacity: loading ? 0.5 : 1,
+              }}
+            >
+              📷
+            </button>
             <input
               value={input}
               onChange={e => setInput(e.target.value)}
@@ -151,4 +190,16 @@ export default function ChatWidget({ onExpenseSaved, hidden }: { onExpenseSaved?
       )}
     </>
   )
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      resolve(result.split(',')[1])
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
 }

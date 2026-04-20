@@ -2,21 +2,23 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase, type Expense, type Income, type SharedAccess, type Account, BANKS, CATEGORIES } from '@/lib/supabase'
+import { supabase, type Expense, type Income, type SharedAccess, type Account, type UserSettings, type PaymentMethod, CATEGORIES } from '@/lib/supabase'
 import ChatWidget from '@/app/components/ChatWidget'
+import OnboardingSetup from '@/app/components/OnboardingSetup'
 
 const MONTHS = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
 ]
 
-const CARD_CLOSING_DAYS: Record<string, number> = {
+// Fallback closing days — overridden at runtime by paymentMethods state
+const DEFAULT_CLOSING_DAYS: Record<string, number> = {
   'Itaú': 26,
   'BROU': 25,
 }
 
-function getBillingMonth(purchaseDateStr: string, bank: string): string {
-  const closingDay = CARD_CLOSING_DAYS[bank]
+function getBillingMonth(purchaseDateStr: string, bank: string, closingDays: Record<string, number> = DEFAULT_CLOSING_DAYS): string {
+  const closingDay = closingDays[bank]
   if (!closingDay) return purchaseDateStr.substring(0, 7)
   const [year, month, day] = purchaseDateStr.split('-').map(Number)
   if (day > closingDay) {
@@ -38,10 +40,9 @@ function lastDayOfMonth(monthStr: string): string {
   return `${monthStr}-${String(day).padStart(2, '0')}`
 }
 
-function formatMoney(amount: number, currency: 'UYU' | 'USD') {
-  if (currency === 'USD') {
-    return `USD ${amount.toLocaleString('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-  }
+function formatMoney(amount: number, currency: 'UYU' | 'USD' | 'EUR') {
+  if (currency === 'USD') return `USD ${amount.toLocaleString('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  if (currency === 'EUR') return `EUR ${amount.toLocaleString('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   return `$ ${amount.toLocaleString('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
@@ -108,6 +109,10 @@ export default function Dashboard() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [activeAccount, setActiveAccount] = useState<Account | null>(null)
 
+  const [userSettings, setUserSettings] = useState<UserSettings | null>(null)
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
+
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth())
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [loading, setLoading] = useState(true)
@@ -128,7 +133,7 @@ export default function Dashboard() {
   const [incomeModalType, setIncomeModalType] = useState<'income' | 'savings'>('income')
   const [incomeDesc, setIncomeDesc] = useState('Sueldo')
   const [incomeAmount, setIncomeAmount] = useState('')
-  const [incomeCurrency, setIncomeCurrency] = useState<'UYU' | 'USD'>('UYU')
+  const [incomeCurrency, setIncomeCurrency] = useState<'UYU' | 'USD' | 'EUR'>('UYU')
   const [incomeFormLoading, setIncomeFormLoading] = useState(false)
   const [incomeError, setIncomeError] = useState('')
   const [deleteIncomeConfirm, setDeleteIncomeConfirm] = useState<string | null>(null)
@@ -155,7 +160,7 @@ export default function Dashboard() {
   // Expense form state
   const [formDesc, setFormDesc] = useState('')
   const [formAmount, setFormAmount] = useState('')
-  const [formCurrency, setFormCurrency] = useState<'UYU' | 'USD'>('UYU')
+  const [formCurrency, setFormCurrency] = useState<'UYU' | 'USD' | 'EUR'>('UYU')
   const [formBank, setFormBank] = useState('')
   const [formDate, setFormDate] = useState(getDefaultDateForMonth(getCurrentMonth()))
   const [formInstallments, setFormInstallments] = useState(1)
@@ -164,13 +169,21 @@ export default function Dashboard() {
   const [formLoading, setFormLoading] = useState(false)
   const [formError, setFormError] = useState('')
 
+  const closingDaysMap = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const pm of paymentMethods) {
+      if (pm.closing_day) map[pm.name] = pm.closing_day
+    }
+    return Object.keys(map).length > 0 ? map : DEFAULT_CLOSING_DAYS
+  }, [paymentMethods])
+
   const billingMonth = useMemo(() => {
     if (!formDate) return selectedMonth
-    if (formBank && CARD_CLOSING_DAYS[formBank]) {
-      return getBillingMonth(formDate, formBank)
+    if (formBank && closingDaysMap[formBank]) {
+      return getBillingMonth(formDate, formBank, closingDaysMap)
     }
     return formDate.substring(0, 7)
-  }, [formDate, formBank, selectedMonth])
+  }, [formDate, formBank, selectedMonth, closingDaysMap])
 
   const billingDiffersFromDate = billingMonth !== formDate.substring(0, 7)
 
@@ -216,6 +229,14 @@ export default function Dashboard() {
         setMyPhone(phoneData.phone); setPhoneInput(phoneData.phone)
         if (phoneData.whatsapp_phone) { setMyWhatsapp(phoneData.whatsapp_phone); setWhatsappInput(phoneData.whatsapp_phone) }
       }
+
+      const [settingsRes, pmRes] = await Promise.all([
+        supabase.from('user_settings').select('*').eq('user_id', uid).single(),
+        supabase.from('payment_methods').select('*').eq('user_id', uid).order('sort_order'),
+      ])
+      setUserSettings((settingsRes.data as UserSettings) ?? null)
+      setPaymentMethods((pmRes.data as PaymentMethod[]) ?? [])
+      setSettingsLoaded(true)
     })
   }, [router])
 
@@ -524,11 +545,15 @@ export default function Dashboard() {
 
   const totalUYU = expenses.filter(e => e.currency === 'UYU').reduce((s, e) => s + e.amount, 0)
   const totalUSD = expenses.filter(e => e.currency === 'USD').reduce((s, e) => s + e.amount, 0)
+  const totalEUR = expenses.filter(e => e.currency === 'EUR').reduce((s, e) => s + e.amount, 0)
   const incomeTotalUYU = incomes.filter(i => i.currency === 'UYU').reduce((s, i) => s + i.amount, 0)
   const incomeTotalUSD = incomes.filter(i => i.currency === 'USD').reduce((s, i) => s + i.amount, 0)
   const savingsTotalUYU = savings.filter(s => s.currency === 'UYU').reduce((acc, s) => acc + s.amount, 0)
   const savingsTotalUSD = savings.filter(s => s.currency === 'USD').reduce((acc, s) => acc + s.amount, 0)
   const viewingShared = activeAccount && !activeAccount.isOwn
+  const isLegacy = userSettings?.is_legacy ?? true
+  const userCurrencies = userSettings?.currencies ?? ['UYU', 'USD']
+  const cardList = paymentMethods.filter((m: PaymentMethod) => m.type !== 'cash').map((m: PaymentMethod) => m.name)
 
   // Expenses grouped by category
   const expensesByCategory = useMemo(() => {
@@ -714,7 +739,7 @@ export default function Dashboard() {
 
         {/* Totals */}
         {expenses.length > 0 && (
-          <div className={`grid gap-3 ${totalUYU > 0 && totalUSD > 0 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          <div className={`grid gap-3 ${[totalUYU, totalUSD, totalEUR].filter(v => v > 0).length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
             {totalUYU > 0 && (
               <div className="bg-white rounded-2xl shadow-sm p-4">
                 <p className="text-xs text-gray-400 font-medium mb-1">Total en Pesos</p>
@@ -731,11 +756,19 @@ export default function Dashboard() {
                 </p>
               </div>
             )}
+            {totalEUR > 0 && (
+              <div className="bg-white rounded-2xl shadow-sm p-4">
+                <p className="text-xs text-gray-400 font-medium mb-1">Total en Euros</p>
+                <p className="text-xl font-bold" style={{ color: '#0ea5e9' }}>
+                  EUR {totalEUR.toLocaleString('es-UY', { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Debes a Fer — total histórico */}
-        {(owedTotalUYU > 0 || owedTotalUSD > 0) && (
+        {/* Debes a Fer — solo para usuarios legacy */}
+        {isLegacy && (owedTotalUYU > 0 || owedTotalUSD > 0) && (
           <div className="rounded-2xl p-4" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
             <p className="text-sm font-semibold mb-2" style={{ color: '#c2410c' }}>💸 Debés a Fer este mes</p>
             <div className="flex flex-wrap gap-3">
@@ -1026,21 +1059,34 @@ export default function Dashboard() {
               {/* Moneda */}
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1.5">Moneda</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button type="button" onClick={() => setFormCurrency('UYU')}
-                    className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
-                    style={formCurrency === 'UYU'
-                      ? { borderColor: '#667eea', background: '#e8edff', color: '#667eea' }
-                      : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
-                    💰 Pesos
-                  </button>
-                  <button type="button" onClick={() => setFormCurrency('USD')}
-                    className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
-                    style={formCurrency === 'USD'
-                      ? { borderColor: '#764ba2', background: '#f3e8ff', color: '#764ba2' }
-                      : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
-                    💵 Dólares
-                  </button>
+                <div className={`grid gap-2 ${userCurrencies.includes('EUR') ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                  {userCurrencies.includes('UYU') && (
+                    <button type="button" onClick={() => setFormCurrency('UYU')}
+                      className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
+                      style={formCurrency === 'UYU'
+                        ? { borderColor: '#667eea', background: '#e8edff', color: '#667eea' }
+                        : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
+                      💰 Pesos
+                    </button>
+                  )}
+                  {userCurrencies.includes('USD') && (
+                    <button type="button" onClick={() => setFormCurrency('USD')}
+                      className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
+                      style={formCurrency === 'USD'
+                        ? { borderColor: '#764ba2', background: '#f3e8ff', color: '#764ba2' }
+                        : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
+                      💵 Dólares
+                    </button>
+                  )}
+                  {userCurrencies.includes('EUR') && (
+                    <button type="button" onClick={() => setFormCurrency('EUR')}
+                      className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
+                      style={formCurrency === 'EUR'
+                        ? { borderColor: '#0ea5e9', background: '#e0f2fe', color: '#0ea5e9' }
+                        : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
+                      💶 Euros
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1052,12 +1098,12 @@ export default function Dashboard() {
                   onChange={e => { setFormBank(e.target.value); setFormInstallments(1) }}
                   className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 text-gray-800 bg-white"
                 >
-                  <option value="">Otros</option>
-                  {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                  <option value="">Efectivo / Otros</option>
+                  {cardList.map(b => <option key={b} value={b}>{b}</option>)}
                 </select>
-                {formBank && CARD_CLOSING_DAYS[formBank] && (
+                {formBank && closingDaysMap[formBank] && (
                   <p className="text-xs text-gray-400 mt-1.5 ml-1">
-                    Cierre: día {CARD_CLOSING_DAYS[formBank]} de cada mes
+                    Cierre: día {closingDaysMap[formBank]} de cada mes
                   </p>
                 )}
               </div>
@@ -1115,26 +1161,28 @@ export default function Dashboard() {
                 />
               </div>
 
-              {/* Debes a Fer */}
-              <button
-                type="button"
-                onClick={() => setFormIsOwed(prev => !prev)}
-                className="w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all"
-                style={formIsOwed
-                  ? { borderColor: '#f97316', background: '#fff7ed' }
-                  : { borderColor: '#e5e7eb', background: 'white' }}>
-                <div className="flex items-center gap-2">
-                  <span className="text-lg">💸</span>
-                  <span className="text-sm font-medium" style={{ color: formIsOwed ? '#c2410c' : '#6b7280' }}>
-                    Debes a Fer
-                  </span>
-                </div>
-                <div className="w-10 h-6 rounded-full transition-all relative"
-                  style={{ background: formIsOwed ? '#f97316' : '#e5e7eb' }}>
-                  <div className="w-4 h-4 bg-white rounded-full absolute top-1 transition-all shadow-sm"
-                    style={{ left: formIsOwed ? '22px' : '2px' }} />
-                </div>
-              </button>
+              {/* Debes a Fer — solo para usuarios legacy */}
+              {isLegacy && (
+                <button
+                  type="button"
+                  onClick={() => setFormIsOwed(prev => !prev)}
+                  className="w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all"
+                  style={formIsOwed
+                    ? { borderColor: '#f97316', background: '#fff7ed' }
+                    : { borderColor: '#e5e7eb', background: 'white' }}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">💸</span>
+                    <span className="text-sm font-medium" style={{ color: formIsOwed ? '#c2410c' : '#6b7280' }}>
+                      Debes a Fer
+                    </span>
+                  </div>
+                  <div className="w-10 h-6 rounded-full transition-all relative"
+                    style={{ background: formIsOwed ? '#f97316' : '#e5e7eb' }}>
+                    <div className="w-4 h-4 bg-white rounded-full absolute top-1 transition-all shadow-sm"
+                      style={{ left: formIsOwed ? '22px' : '2px' }} />
+                  </div>
+                </button>
+              )}
 
               {formError && (
                 <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl">
@@ -1196,21 +1244,34 @@ export default function Dashboard() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1.5">Moneda</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button type="button" onClick={() => setIncomeCurrency('UYU')}
-                    className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
-                    style={incomeCurrency === 'UYU'
-                      ? { borderColor: '#667eea', background: '#e8edff', color: '#667eea' }
-                      : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
-                    💰 Pesos
-                  </button>
-                  <button type="button" onClick={() => setIncomeCurrency('USD')}
-                    className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
-                    style={incomeCurrency === 'USD'
-                      ? { borderColor: '#764ba2', background: '#f3e8ff', color: '#764ba2' }
-                      : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
-                    💵 Dólares
-                  </button>
+                <div className={`grid gap-2 ${userCurrencies.includes('EUR') ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                  {userCurrencies.includes('UYU') && (
+                    <button type="button" onClick={() => setIncomeCurrency('UYU')}
+                      className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
+                      style={incomeCurrency === 'UYU'
+                        ? { borderColor: '#667eea', background: '#e8edff', color: '#667eea' }
+                        : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
+                      💰 Pesos
+                    </button>
+                  )}
+                  {userCurrencies.includes('USD') && (
+                    <button type="button" onClick={() => setIncomeCurrency('USD')}
+                      className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
+                      style={incomeCurrency === 'USD'
+                        ? { borderColor: '#764ba2', background: '#f3e8ff', color: '#764ba2' }
+                        : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
+                      💵 Dólares
+                    </button>
+                  )}
+                  {userCurrencies.includes('EUR') && (
+                    <button type="button" onClick={() => setIncomeCurrency('EUR')}
+                      className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
+                      style={incomeCurrency === 'EUR'
+                        ? { borderColor: '#0ea5e9', background: '#e0f2fe', color: '#0ea5e9' }
+                        : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
+                      💶 Euros
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1504,6 +1565,17 @@ export default function Dashboard() {
         </div>
       )}
       <ChatWidget onExpenseSaved={loadExpenses} hidden={!!modalMode} />
+
+      {/* Onboarding para usuarios nuevos */}
+      {settingsLoaded && myUserId && (!userSettings || !userSettings.setup_completed) && (
+        <OnboardingSetup
+          userId={myUserId}
+          onComplete={(settings, methods) => {
+            setUserSettings(settings)
+            setPaymentMethods(methods)
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -1,9 +1,10 @@
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY!
+const GEMINI_KEY    = process.env.GEMINI_API_KEY!
 
 export type ExpenseItem = {
   description: string
   amount: number
-  currency: 'UYU' | 'USD'
+  currency: 'UYU' | 'USD' | 'EUR'
   bank: string | null
   category: string | null
   installments: number | null
@@ -21,14 +22,19 @@ export type ParsedEntry = {
   type: 'income' | 'savings'
   description: string
   amount: number
-  currency: 'UYU' | 'USD'
+  currency: 'UYU' | 'USD' | 'EUR'
 }
 export type ParseResult = ParsedExpenses | ParsedQuery | ParsedEntry | null
 
-export async function parseExpenseMessage(text: string): Promise<ParseResult> {
+export async function parseExpenseMessage(
+  text: string,
+  cards: string[] = ['Itaú', 'BROU', 'Scotiabank'],
+): Promise<ParseResult> {
   const today = new Date(Date.now() - 3 * 60 * 60 * 1000)
   const todayStr = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`
   const monthStr = todayStr.slice(0, 7)
+
+  const cardOptions = cards.length > 0 ? cards.map(c => `"${c}"`).join(' | ') + ' | null' : 'null'
 
   const systemPrompt = `Sos un asistente de gastos personales. Hoy es ${todayStr}.
 Tu tarea: determinar si el mensaje contiene GASTOS, INGRESOS, AHORROS o una CONSULTA.
@@ -41,9 +47,9 @@ Si hay uno o más gastos, respondé con este JSON (SIEMPRE con "items" como arra
     {
       "description": "nombre corto del gasto (2-4 palabras)",
       "amount": número (solo dígitos, sin símbolos de moneda),
-      "currency": "UYU" | "USD",
-      "bank": "Itaú" | "BROU" | "Scotiabank" | null,
-      "category": "comida"|"nafta"|"ropa"|"hogar"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza" | null,
+      "currency": "UYU" | "USD" | "EUR",
+      "bank": ${cardOptions},
+      "category": "comida"|"nafta"|"ropa"|"hogar"|"alquiler"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza" | null,
       "installments": número de cuotas o null,
       "date": "YYYY-MM-DD" solo si mencionan fecha distinta a hoy, si no null
     }
@@ -51,65 +57,35 @@ Si hay uno o más gastos, respondé con este JSON (SIEMPRE con "items" como arra
 }
 
 CRÍTICO — Moneda:
-- Si mencionan "dólares", "dolar", "dolares", "USD", "U$S", "us$", "usd" → currency: "USD"
-- Si no mencionan moneda específica o dicen "pesos", "$" → currency: "UYU"
-- "gasté 30 dólares" → amount: 30, currency: "USD"
-- "pagué U$S 50 en Spotify" → amount: 50, currency: "USD"
-- "pizza $350" → amount: 350, currency: "UYU"
+- "dólares","dolar","dolares","USD","U$S","us$","usd" → currency: "USD"
+- "euros","euro","EUR","€" → currency: "EUR"
+- Sin mención o "pesos","$" → currency: "UYU"
 
-CRÍTICO — Extracción de monto (ignorar $, $U, U$S):
+CRÍTICO — Extracción de monto (ignorar $, $U, U$S, €):
 - "compré un helado por $150" → amount: 150
-- "me hice las uñas por $750" → amount: 750
-- "gasté $300 en la cena" → amount: 300
-- "me salió 200 la pizza" → amount: 200
+- "gasté 30 dólares" → amount: 30, currency: "USD"
+- "pagué 20 euros" → amount: 20, currency: "EUR"
 
-CRÍTICO — Categoría "belleza": uñas, peluquería, corte de pelo, tintura, shampú, cremas, maquillaje, depilación, manicura, pedicura, perfume, skincare → category: "belleza"
+CRÍTICO — Categoría "belleza": uñas, peluquería, corte, tintura, cremas, maquillaje, depilación, manicura, pedicura, perfume, skincare
+CRÍTICO — Categoría "alquiler": alquiler, renta, arrendamiento
 
-CRÍTICO — Múltiples gastos: cada gasto mencionado va como un item separado:
-- "helado por 150 y milanesa por 300" → items con 2 entradas
+CRÍTICO — Múltiples gastos → múltiples items
 
 ═══ INGRESOS ═══
-Si el mensaje es un ingreso de dinero recibido (sueldo, cobro, freelance, salario):
-{
-  "type": "income",
-  "description": "Sueldo" | "Freelance" | descripción corta,
-  "amount": número,
-  "currency": "UYU" | "USD"
-}
-- "cobré el sueldo de 50000" → type: "income", currency: "UYU"
-- "me depositaron el sueldo, 80000 pesos" → type: "income", currency: "UYU"
-- "recibí 1000 dólares de freelance" → type: "income", currency: "USD"
-- "ingresé mi sueldo de 60000" → type: "income"
+Si el mensaje es un ingreso recibido (sueldo, cobro, freelance, salario):
+{"type":"income","description":"Sueldo"|descripción corta,"amount":número,"currency":"UYU"|"USD"|"EUR"}
 
 ═══ AHORROS ═══
 Si el mensaje indica que ahorró o guardó dinero:
-{
-  "type": "savings",
-  "description": "Ahorro" | descripción corta,
-  "amount": número,
-  "currency": "UYU" | "USD"
-}
-- "ahorré 5000 este mes" → type: "savings", currency: "UYU"
-- "guardé 200 dólares" → type: "savings", currency: "USD"
-- "puse 10000 en el ahorro" → type: "savings"
+{"type":"savings","description":"Ahorro"|descripción corta,"amount":número,"currency":"UYU"|"USD"|"EUR"}
 
 ═══ CONSULTAS ═══
-Si es una pregunta sobre gastos, respondé con:
-{
-  "type": "query",
-  "query": "owed" | "category_total" | "monthly_total",
-  "category": categoría (solo para category_total, si no null),
-  "month": "YYYY-MM"
-}
-- "owed": cuánto le debo a Fer
-- "category_total": cuánto gasté en [categoría]
-- "monthly_total": cuánto gasté en total / resumen del mes
+{"type":"query","query":"owed"|"category_total"|"monthly_total","category":null o categoría,"month":"YYYY-MM"}
 
 ═══ REGLAS ═══
 - Sin monto claro → {"error": "sin_monto"}
-- "itau"/"itaú" → "Itaú" | "brou" → "BROU" | "scotia" → "Scotiabank"
+- Tarjetas disponibles: ${cards.join(', ')} (o efectivo si no menciona tarjeta)
 - "este mes" → "${monthStr}" | "el mes pasado" → mes anterior
-- Meses: enero=01 feb=02 mar=03 abr=04 may=05 jun=06 jul=07 ago=08 sep=09 oct=10 nov=11 dic=12
 - Respondé ÚNICAMENTE con JSON válido, sin texto adicional, sin markdown`
 
   try {
@@ -147,10 +123,10 @@ Si es una pregunta sobre gastos, respondé con:
     if (parsed.type === 'income' || parsed.type === 'savings') {
       if (!parsed.amount || Number(parsed.amount) <= 0) return null
       return {
-        type: parsed.type,
+        type:        parsed.type,
         description: parsed.description ?? (parsed.type === 'income' ? 'Sueldo' : 'Ahorro'),
-        amount: Number(parsed.amount),
-        currency: parsed.currency === 'USD' ? 'USD' : 'UYU',
+        amount:      Number(parsed.amount),
+        currency:    normalizeCurrency(parsed.currency),
       }
     }
 
@@ -166,8 +142,8 @@ Si es una pregunta sobre gastos, respondé con:
       .map(i => ({
         description:  i.description ?? 'Gasto',
         amount:       Number(i.amount),
-        currency:     i.currency === 'USD' ? 'USD' : 'UYU',
-        bank:         i.bank ?? null,
+        currency:     normalizeCurrency(i.currency),
+        bank:         normalizeBank(i.bank, cards),
         category:     i.category ?? null,
         installments: i.installments ? Number(i.installments) : null,
         date:         i.date ?? null,
@@ -178,4 +154,85 @@ Si es una pregunta sobre gastos, respondé con:
   } catch {
     return null
   }
+}
+
+export async function analyzeReceiptImage(
+  base64: string,
+  mimeType: string,
+  cards: string[] = [],
+): Promise<ParseResult> {
+  const cardList = cards.length > 0 ? cards.join(', ') : 'ninguna tarjeta específica'
+  const prompt = `Analizá esta imagen de un ticket, factura o recibo.
+Identificá todos los gastos y devolvé ÚNICAMENTE este JSON (sin markdown, sin texto extra):
+{
+  "type": "expenses",
+  "items": [{
+    "description": "nombre corto del gasto (2-4 palabras)",
+    "amount": número total,
+    "currency": "UYU" | "USD" | "EUR",
+    "bank": null,
+    "category": "comida"|"nafta"|"ropa"|"hogar"|"alquiler"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza"|null,
+    "installments": null,
+    "date": "YYYY-MM-DD" si se ve la fecha, si no null
+  }]
+}
+Si no se pueden identificar gastos claros en la imagen, devolvé: {"error":"no_expense"}
+Tarjetas disponibles: ${cardList}`
+
+  try {
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [
+            { inlineData: { mimeType, data: base64 } },
+            { text: prompt },
+          ]}],
+          generationConfig: { temperature: 0 },
+        }),
+      }
+    )
+    const gdata = await geminiRes.json()
+    const raw = gdata.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
+    if (!raw) return null
+
+    const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+    const parsed = JSON.parse(clean)
+    if (parsed.error) return null
+
+    let rawItems: unknown[] = []
+    if (parsed.type === 'expenses' && Array.isArray(parsed.items)) rawItems = parsed.items
+    else if (parsed.amount && Number(parsed.amount) > 0) rawItems = [parsed]
+
+    const items: ExpenseItem[] = (rawItems as { description?: string; amount?: unknown; currency?: string; bank?: string | null; category?: string | null; installments?: unknown; date?: string | null }[])
+      .filter(i => i.amount && Number(i.amount) > 0)
+      .map(i => ({
+        description:  i.description ?? 'Gasto',
+        amount:       Number(i.amount),
+        currency:     normalizeCurrency(i.currency),
+        bank:         normalizeBank(i.bank, cards),
+        category:     i.category ?? null,
+        installments: null,
+        date:         i.date ?? null,
+      }))
+
+    if (items.length === 0) return null
+    return { type: 'expenses', items }
+  } catch {
+    return null
+  }
+}
+
+function normalizeCurrency(c: string | undefined | null): 'UYU' | 'USD' | 'EUR' {
+  if (c === 'USD') return 'USD'
+  if (c === 'EUR') return 'EUR'
+  return 'UYU'
+}
+
+function normalizeBank(bank: string | null | undefined, validCards: string[]): string | null {
+  if (!bank) return null
+  const found = validCards.find(c => c.toLowerCase() === bank.toLowerCase())
+  return found ?? null
 }

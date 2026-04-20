@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { analyzeReceiptImage } from '@/lib/parse-expense'
 
 const BOT_TOKEN        = process.env.TELEGRAM_BOT_TOKEN!
-const GEMINI_KEY       = process.env.GEMINI_API_KEY!       // solo para transcribir audio
+const GEMINI_KEY       = process.env.GEMINI_API_KEY!
 const ANTHROPIC_KEY    = process.env.ANTHROPIC_API_KEY!
 const OWED_USER_EMAIL  = process.env.OWED_USER_EMAIL ?? ''
 const API_BASE         = `https://api.telegram.org/bot${BOT_TOKEN}`
@@ -11,7 +12,7 @@ const API_BASE         = `https://api.telegram.org/bot${BOT_TOKEN}`
 type ExpenseItem = {
   description: string
   amount: number
-  currency: 'UYU' | 'USD'
+  currency: 'UYU' | 'USD' | 'EUR'
   bank: string | null
   category: string | null
   installments: number | null
@@ -34,7 +35,7 @@ type EntryResult = {
   type: 'income' | 'savings'
   description: string
   amount: number
-  currency: 'UYU' | 'USD'
+  currency: 'UYU' | 'USD' | 'EUR'
 }
 
 type AIResult = ExpensesResult | QueryResult | EntryResult | null
@@ -94,7 +95,7 @@ export async function POST(req: NextRequest) {
 
   // ── Mensaje normal ────────────────────────────────────────────────────────
   const message = body.message
-  if (!message || (!message.text && !message.voice && !message.audio)) {
+  if (!message || (!message.text && !message.voice && !message.audio && !message.photo)) {
     return NextResponse.json({ ok: true })
   }
 
@@ -102,6 +103,7 @@ export async function POST(req: NextRequest) {
 
   let inputText: string | null = null
   let transcribedText: string | null = null
+  let photoData: { base64: string; mime: string } | null = null
 
   if (message.text) {
     inputText = (message.text as string).trim()
@@ -117,6 +119,16 @@ export async function POST(req: NextRequest) {
       await sendMessage(chatId, '❌ No pude escuchar el audio\\. Intentá mandar el gasto por texto\\.', 'MarkdownV2')
       return NextResponse.json({ ok: true })
     }
+  } else if (message.photo) {
+    // photo is an array of sizes — take the largest (last element)
+    const photos = message.photo as { file_id: string }[]
+    const largest = photos[photos.length - 1]
+    const fileData = await downloadTelegramFile(largest.file_id)
+    if (!fileData) {
+      await sendMessage(chatId, '❌ No pude descargar la foto\\.', 'MarkdownV2')
+      return NextResponse.json({ ok: true })
+    }
+    photoData = { base64: fileData.base64, mime: 'image/jpeg' }
   }
 
   const text = inputText ?? transcribedText ?? ''
@@ -153,6 +165,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
+  // Fetch payment methods and user settings
+  const [pmRes, settingsRes] = await Promise.all([
+    supabaseAdmin.from('payment_methods').select('name, type').eq('user_id', phoneUser.user_id).order('sort_order'),
+    supabaseAdmin.from('user_settings').select('is_legacy').eq('user_id', phoneUser.user_id).single(),
+  ])
+  const userCards: string[] = ((pmRes.data ?? []) as { name: string; type: string }[])
+    .filter(m => m.type !== 'cash')
+    .map(m => m.name)
+  const isLegacyUser = (settingsRes.data as { is_legacy: boolean } | null)?.is_legacy ?? true
+
   // Si hay edición pendiente, obtener el gasto original para pasarle contexto a Claude
   let originalExpense: Record<string, unknown> | null = null
   let pendingEditIds: string[] = []
@@ -173,7 +195,14 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const result = await parseWithAI(text || null, originalExpense)
+  // Photo takes priority over text
+  let result: AIResult
+  if (photoData) {
+    const parsed = await analyzeReceiptImage(photoData.base64, photoData.mime, userCards)
+    result = parsed
+  } else {
+    result = await parseWithAI(text || null, originalExpense, userCards)
+  }
 
   if (!result) {
     await sendMessage(chatId,
@@ -218,7 +247,9 @@ export async function POST(req: NextRequest) {
     const label = result.type === 'income' ? '💼 Ingreso' : '🏦 Ahorro'
     const amtStr = result.currency === 'USD'
       ? `USD ${escapeMarkdown(result.amount.toLocaleString('es-UY'))}`
-      : `\\$${escapeMarkdown(result.amount.toLocaleString('es-UY'))}`
+      : result.currency === 'EUR'
+        ? `EUR ${escapeMarkdown(result.amount.toLocaleString('es-UY'))}`
+        : `\\$${escapeMarkdown(result.amount.toLocaleString('es-UY'))}`
     await sendMessage(chatId,
       `✅ *${escapeMarkdown(result.description)}* guardado como ${escapeMarkdown(label)}\n${amtStr}`,
       'MarkdownV2'
@@ -230,7 +261,7 @@ export async function POST(req: NextRequest) {
   if (result.type !== 'expenses') return NextResponse.json({ ok: true })
 
   const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(phoneUser.user_id)
-  const isGuille = !!OWED_USER_EMAIL && authUser?.user?.email === OWED_USER_EMAIL
+  const isGuille = isLegacyUser && !!OWED_USER_EMAIL && authUser?.user?.email === OWED_USER_EMAIL
 
   const allEntries: Record<string, unknown>[] = []
   for (const item of result.items) {
@@ -489,7 +520,7 @@ async function transcribeAudio(audioBase64: string, audioMime: string): Promise<
 }
 
 // ─── Parsing con Claude ───────────────────────────────────────────────────────
-async function parseWithAI(text: string | null, originalExpense: Record<string, unknown> | null = null): Promise<AIResult> {
+async function parseWithAI(text: string | null, originalExpense: Record<string, unknown> | null = null, cards: string[] = ['Itaú', 'BROU', 'Scotiabank']): Promise<AIResult> {
   const today = new Date(Date.now() - 3 * 60 * 60 * 1000)
   const todayStr = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`
   const monthStr = todayStr.slice(0, 7)
@@ -509,8 +540,9 @@ Respondé ÚNICAMENTE con este JSON, sin texto adicional:
   "items": [{
     "description": "...",
     "amount": número,
-    "bank": "Itaú"|"BROU"|"Scotiabank"|null,
-    "category": "comida"|"nafta"|"ropa"|"hogar"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza"|null,
+    "currency": "UYU"|"USD"|"EUR",
+    "bank": ${cards.length > 0 ? cards.map(c => `"${c}"`).join('|') + '|null' : 'null'},
+    "category": "comida"|"nafta"|"ropa"|"hogar"|"alquiler"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza"|null,
     "installments": null,
     "date": null
   }]
@@ -538,11 +570,14 @@ Respondé ÚNICAMENTE con este JSON, sin texto adicional:
       const parsed = JSON.parse(clean)
       if (parsed.type === 'expenses' && Array.isArray(parsed.items) && parsed.items.length > 0) {
         const i = parsed.items[0]
-        return { type: 'expenses', items: [{ description: i.description, amount: Number(i.amount), currency: i.currency === 'USD' ? 'USD' : 'UYU', bank: i.bank ?? null, category: i.category ?? null, installments: null, date: null }] }
+        return { type: 'expenses', items: [{ description: i.description, amount: Number(i.amount), currency: normCurrency(i.currency), bank: i.bank ?? null, category: i.category ?? null, installments: null, date: null }] }
       }
       return null
     } catch { return null }
   }
+
+  const cardOptions = cards.length > 0 ? cards.map(c => `"${c}"`).join(' | ') + ' | null' : 'null'
+  const cardNames = cards.join(', ') || 'ninguna'
 
   const systemPrompt = `Sos un asistente de gastos personales. Hoy es ${todayStr}.
 Tu tarea: determinar si el mensaje contiene GASTOS, INGRESOS, AHORROS o una CONSULTA.
@@ -555,9 +590,9 @@ Si hay uno o más gastos, respondé con este JSON (SIEMPRE con "items" como arra
     {
       "description": "nombre corto del gasto (2-4 palabras)",
       "amount": número (solo dígitos, sin símbolos de moneda),
-      "currency": "UYU" | "USD",
-      "bank": "Itaú" | "BROU" | "Scotiabank" | null,
-      "category": "comida"|"nafta"|"ropa"|"hogar"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza" | null,
+      "currency": "UYU" | "USD" | "EUR",
+      "bank": ${cardOptions},
+      "category": "comida"|"nafta"|"ropa"|"hogar"|"alquiler"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza" | null,
       "installments": número de cuotas o null,
       "date": "YYYY-MM-DD" solo si mencionan fecha distinta a hoy, si no null
     }
@@ -565,50 +600,33 @@ Si hay uno o más gastos, respondé con este JSON (SIEMPRE con "items" como arra
 }
 
 CRÍTICO — Moneda:
-- "dólares", "dolar", "USD", "U$S", "us$", "usd" → currency: "USD"
-- Sin mención de moneda o "pesos", "$" → currency: "UYU"
-- "gasté 30 dólares" → amount: 30, currency: "USD"
-- "pizza $350" → amount: 350, currency: "UYU"
+- "dólares","dolar","USD","U$S","us$","usd" → currency: "USD"
+- "euros","euro","EUR","€" → currency: "EUR"
+- Sin mención o "pesos","$" → currency: "UYU"
 
-CRÍTICO — Extracción de monto (ignorar $, $U, U$S):
+CRÍTICO — Extracción de monto (ignorar $, $U, U$S, €):
 - "compré un helado por $150" → amount: 150
-- "me hice las uñas por $750" → amount: 750
-- "gasté $300 en la cena" → amount: 300
-- "me salió 200 la pizza" → amount: 200
+- "gasté 30 dólares" → amount: 30, currency: "USD"
+- "pagué 20 euros" → amount: 20, currency: "EUR"
 
-CRÍTICO — Categoría "belleza": uñas, peluquería, corte de pelo, tintura, shampú, cremas, maquillaje, depilación, manicura, pedicura, perfume, skincare → category: "belleza"
-
-CRÍTICO — Múltiples gastos: cada gasto mencionado va como un item separado:
-- "helado por 150 y milanesa por 300" → items con 2 entradas
-- "hamburguesa 100 y papas 50 con itau" → items con 2 entradas, ambas con bank:"Itaú"
+CRÍTICO — Categoría "belleza": uñas, peluquería, corte, tintura, cremas, maquillaje, depilación, manicura, pedicura, perfume, skincare
+CRÍTICO — Categoría "alquiler": alquiler, renta, arrendamiento
+CRÍTICO — Múltiples gastos → múltiples items
 
 ═══ INGRESOS ═══
 Si el mensaje es un ingreso recibido (sueldo, cobro, freelance, salario):
-{"type":"income","description":"Sueldo"|descripción corta,"amount":número,"currency":"UYU"|"USD"}
-- "cobré el sueldo de 50000" → type:"income", currency:"UYU"
-- "recibí 1000 dólares de freelance" → type:"income", currency:"USD"
+{"type":"income","description":"Sueldo"|descripción corta,"amount":número,"currency":"UYU"|"USD"|"EUR"}
 
 ═══ AHORROS ═══
 Si el mensaje indica que ahorró o guardó dinero:
-{"type":"savings","description":"Ahorro"|descripción corta,"amount":número,"currency":"UYU"|"USD"}
-- "ahorré 5000 este mes" → type:"savings", currency:"UYU"
-- "guardé 200 dólares" → type:"savings", currency:"USD"
+{"type":"savings","description":"Ahorro"|descripción corta,"amount":número,"currency":"UYU"|"USD"|"EUR"}
 
 ═══ CONSULTAS ═══
-Si es una pregunta sobre gastos, respondé con:
-{
-  "type": "query",
-  "query": "owed" | "category_total" | "monthly_total",
-  "category": categoría (solo para category_total, si no null),
-  "month": "YYYY-MM"
-}
-- "owed": cuánto le debo a Fer
-- "category_total": cuánto gasté en [categoría]
-- "monthly_total": cuánto gasté en total / resumen del mes
+{"type":"query","query":"owed"|"category_total"|"monthly_total","category":null o categoría,"month":"YYYY-MM"}
 
 ═══ REGLAS ═══
 - Sin monto claro → {"error": "sin_monto"}
-- "itau"/"itaú" → "Itaú" | "brou" → "BROU" | "scotia" → "Scotiabank"
+- Tarjetas disponibles: ${cardNames}
 - "este mes" → "${monthStr}" | "el mes pasado" → mes anterior
 - Meses: enero=01 feb=02 mar=03 abr=04 may=05 jun=06 jul=07 ago=08 sep=09 oct=10 nov=11 dic=12
 - Respondé ÚNICAMENTE con JSON válido, sin texto adicional, sin markdown`
@@ -656,7 +674,7 @@ Si es una pregunta sobre gastos, respondé con:
         type:        parsed.type,
         description: parsed.description ?? (parsed.type === 'income' ? 'Sueldo' : 'Ahorro'),
         amount:      Number(parsed.amount),
-        currency:    parsed.currency === 'USD' ? 'USD' : 'UYU',
+        currency:    normCurrency(parsed.currency),
       }
     }
 
@@ -673,7 +691,7 @@ Si es una pregunta sobre gastos, respondé con:
       .map(i => ({
         description:  i.description ?? 'Gasto',
         amount:       Number(i.amount),
-        currency:     i.currency === 'USD' ? 'USD' : 'UYU',
+        currency:     normCurrency(i.currency),
         bank:         i.bank ?? null,
         category:     i.category ?? null,
         installments: i.installments ? Number(i.installments) : null,
@@ -690,8 +708,8 @@ Si es una pregunta sobre gastos, respondé con:
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const CATEGORY_LABELS: Record<string, string> = {
   comida: '🍔 Comida', nafta: '⛽ Nafta', ropa: '👕 Ropa', hogar: '🏠 Hogar',
-  salud: '💊 Salud', ocio: '🎬 Ocio', transporte: '🚌 Transporte', tech: '📱 Tech',
-  mascotas: '🐾 Mascotas', educacion: '📚 Educación', regalos: '🎁 Regalos',
+  alquiler: '🏘️ Alquiler', salud: '💊 Salud', ocio: '🎬 Ocio', transporte: '🚌 Transporte',
+  tech: '📱 Tech', mascotas: '🐾 Mascotas', educacion: '📚 Educación', regalos: '🎁 Regalos',
   facturas: '📄 Facturas', viajes: '✈️ Viajes', belleza: '💅 Belleza', otros: '📦 Otros',
 }
 
@@ -727,4 +745,10 @@ async function answerCallback(callbackQueryId: string, text?: string) {
 
 function escapeMarkdown(text: string): string {
   return text.replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, '\\$&')
+}
+
+function normCurrency(c: string | undefined | null): 'UYU' | 'USD' | 'EUR' {
+  if (c === 'USD') return 'USD'
+  if (c === 'EUR') return 'EUR'
+  return 'UYU'
 }

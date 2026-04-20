@@ -5,12 +5,14 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
+export type Currency = 'UYU' | 'USD' | 'EUR'
+
 export type Expense = {
   id: string
   user_id: string
   description: string
   amount: number
-  currency: 'UYU' | 'USD'
+  currency: Currency
   bank: string | null
   month: string        // YYYY-MM
   expense_date: string // YYYY-MM-DD
@@ -25,10 +27,28 @@ export type Income = {
   user_id: string
   description: string
   amount: number
-  currency: 'UYU' | 'USD'
+  currency: Currency
   month: string        // YYYY-MM
   income_date: string | null
   type: 'income' | 'savings'
+  created_at: string
+}
+
+export type UserSettings = {
+  user_id: string
+  currencies: Currency[]
+  is_legacy: boolean
+  setup_completed: boolean
+  created_at: string
+}
+
+export type PaymentMethod = {
+  id: string
+  user_id: string
+  name: string
+  type: 'credit' | 'debit' | 'cash'
+  closing_day: number | null
+  sort_order: number
   created_at: string
 }
 
@@ -40,6 +60,7 @@ export const CATEGORIES = [
   { value: 'ropa',            label: 'Ropa',         emoji: '👕' },
   { value: 'nafta',           label: 'Nafta',        emoji: '⛽' },
   { value: 'hogar',           label: 'Hogar',        emoji: '🏠' },
+  { value: 'alquiler',        label: 'Alquiler',     emoji: '🏘️' },
   { value: 'salud',           label: 'Salud',        emoji: '💊' },
   { value: 'ocio',            label: 'Ocio',         emoji: '🎬' },
   { value: 'transporte',      label: 'Transporte',   emoji: '🚌' },

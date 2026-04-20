@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { analyzeReceiptImage } from '@/lib/parse-expense'
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID!
 const TWILIO_AUTH_TOKEN  = process.env.TWILIO_AUTH_TOKEN!
@@ -9,18 +10,18 @@ const OWED_USER_EMAIL    = process.env.OWED_USER_EMAIL ?? ''
 
 const CATEGORY_LABELS: Record<string, string> = {
   comida: '🍔 Comida', nafta: '⛽ Nafta', ropa: '👕 Ropa', hogar: '🏠 Hogar',
-  salud: '💊 Salud', ocio: '🎬 Ocio', transporte: '🚌 Transporte', tech: '📱 Tech',
-  mascotas: '🐾 Mascotas', educacion: '📚 Educación', regalos: '🎁 Regalos',
+  alquiler: '🏘️ Alquiler', salud: '💊 Salud', ocio: '🎬 Ocio', transporte: '🚌 Transporte',
+  tech: '📱 Tech', mascotas: '🐾 Mascotas', educacion: '📚 Educación', regalos: '🎁 Regalos',
   facturas: '📄 Facturas', viajes: '✈️ Viajes', belleza: '💅 Belleza', otros: '📦 Otros',
 }
 
 type ExpenseItem = {
-  description: string; amount: number; currency: 'UYU' | 'USD'; bank: string | null
+  description: string; amount: number; currency: 'UYU' | 'USD' | 'EUR'; bank: string | null
   category: string | null; installments: number | null; date: string | null
 }
 type ExpensesResult = { type: 'expenses'; items: ExpenseItem[] }
 type QueryResult    = { type: 'query'; query: 'owed' | 'category_total' | 'monthly_total'; category: string | null; month: string }
-type EntryResult    = { type: 'income' | 'savings'; description: string; amount: number; currency: 'UYU' | 'USD' }
+type EntryResult    = { type: 'income' | 'savings'; description: string; amount: number; currency: 'UYU' | 'USD' | 'EUR' }
 type AIResult       = ExpensesResult | QueryResult | EntryResult | null
 
 // ─── Handler principal ────────────────────────────────────────────────────────
@@ -66,6 +67,16 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // Fetch payment methods and user settings
+  const [pmRes, settingsRes] = await Promise.all([
+    supabaseAdmin.from('payment_methods').select('name, type').eq('user_id', phoneUser.user_id).order('sort_order'),
+    supabaseAdmin.from('user_settings').select('is_legacy').eq('user_id', phoneUser.user_id).single(),
+  ])
+  const userCards: string[] = ((pmRes.data ?? []) as { name: string; type: string }[])
+    .filter(m => m.type !== 'cash')
+    .map(m => m.name)
+  const isLegacyUser = (settingsRes.data as { is_legacy: boolean } | null)?.is_legacy ?? true
+
   const ids: string[] = phoneUser.last_expense_ids ?? []
 
   // ── Borrar ─────────────────────────────────────────────────────────────────
@@ -85,6 +96,15 @@ export async function POST(req: NextRequest) {
       .update({ pending_edit: true })
       .eq('whatsapp_phone', from)
     return twiml('✏️ Mandá el gasto corregido y reemplazará al anterior.\n\nEj: "salió 600 en realidad" o "fue en itau"')
+  }
+
+  // ── Imagen (foto de recibo) ────────────────────────────────────────────────
+  if (!body && mediaUrl && mediaType?.startsWith('image/')) {
+    const imageData = await downloadMedia(mediaUrl)
+    if (!imageData) return twiml('❌ No pude descargar la imagen.')
+    const result = await analyzeReceiptImage(imageData, mediaType, userCards)
+    if (!result || result.type !== 'expenses') return twiml('❌ No pude leer el recibo. Intentá con una foto más clara o ingresá el gasto manualmente.')
+    return await saveAndConfirmExpenses(result.items, phoneUser, from, isLegacyUser)
   }
 
   // ── Audio ──────────────────────────────────────────────────────────────────
@@ -112,7 +132,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Parsear con Claude ─────────────────────────────────────────────────────
-  const result = await parseWithAI(inputText, originalExpense)
+  const result = await parseWithAI(inputText, originalExpense, userCards)
 
   if (!result) {
     return twiml(
@@ -154,7 +174,7 @@ export async function POST(req: NextRequest) {
   if (result.type !== 'expenses') return twiml('')
 
   const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(phoneUser.user_id)
-  const isOwed = !!OWED_USER_EMAIL && authUser?.user?.email === OWED_USER_EMAIL
+  const isOwed = isLegacyUser && !!OWED_USER_EMAIL && authUser?.user?.email === OWED_USER_EMAIL
 
   const allEntries: Record<string, unknown>[] = []
   for (const item of result.items) {
@@ -262,13 +282,14 @@ async function handleQuery(userId: string, q: QueryResult): Promise<string> {
 }
 
 // ─── Claude parsing ───────────────────────────────────────────────────────────
-async function parseWithAI(text: string, originalExpense: Record<string, unknown> | null = null): Promise<AIResult> {
+async function parseWithAI(text: string, originalExpense: Record<string, unknown> | null = null, cards: string[] = ['Itaú', 'BROU', 'Scotiabank']): Promise<AIResult> {
   const today    = new Date(Date.now() - 3 * 60 * 60 * 1000)
   const todayStr = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`
   const monthStr = todayStr.slice(0, 7)
+  const cardOptions = cards.length > 0 ? cards.map(c => `"${c}"`).join('|') + '|null' : 'null'
 
   if (originalExpense) {
-    const editPrompt = `El usuario tenía registrado este gasto:\n${JSON.stringify(originalExpense)}\n\nAhora manda esta corrección: "${text}"\n\nAplicá los cambios al gasto original y devolvé ÚNICAMENTE este JSON:\n{"type":"expenses","items":[{"description":"...","amount":número,"bank":"Itaú"|"BROU"|"Scotiabank"|null,"category":"comida"|"nafta"|"ropa"|"hogar"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza"|null,"installments":null,"date":null}]}`
+    const editPrompt = `El usuario tenía registrado este gasto:\n${JSON.stringify(originalExpense)}\n\nAhora manda esta corrección: "${text}"\n\nAplicá los cambios al gasto original y devolvé ÚNICAMENTE este JSON:\n{"type":"expenses","items":[{"description":"...","amount":número,"currency":"UYU"|"USD"|"EUR","bank":${cardOptions},"category":"comida"|"nafta"|"ropa"|"hogar"|"alquiler"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza"|null,"installments":null,"date":null}]}`
     try {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -281,7 +302,7 @@ async function parseWithAI(text: string, originalExpense: Record<string, unknown
       const parsed = JSON.parse(clean)
       if (parsed.type === 'expenses' && Array.isArray(parsed.items) && parsed.items.length > 0) {
         const i = parsed.items[0]
-        return { type: 'expenses', items: [{ description: i.description, amount: Number(i.amount), currency: i.currency === 'USD' ? 'USD' : 'UYU', bank: i.bank ?? null, category: i.category ?? null, installments: null, date: null }] }
+        return { type: 'expenses', items: [{ description: i.description, amount: Number(i.amount), currency: normCurrency(i.currency), bank: i.bank ?? null, category: i.category ?? null, installments: null, date: null }] }
       }
       return null
     } catch { return null }
@@ -291,25 +312,26 @@ async function parseWithAI(text: string, originalExpense: Record<string, unknown
 Tu tarea: determinar si el mensaje contiene GASTOS, INGRESOS, AHORROS o una CONSULTA.
 
 ═══ GASTOS ═══
-{"type":"expenses","items":[{"description":"nombre corto (2-4 palabras)","amount":número,"currency":"UYU"|"USD","bank":"Itaú"|"BROU"|"Scotiabank"|null,"category":"comida"|"nafta"|"ropa"|"hogar"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza"|null,"installments":número o null,"date":"YYYY-MM-DD" o null}]}
+{"type":"expenses","items":[{"description":"nombre corto (2-4 palabras)","amount":número,"currency":"UYU"|"USD"|"EUR","bank":${cardOptions},"category":"comida"|"nafta"|"ropa"|"hogar"|"alquiler"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza"|null,"installments":número o null,"date":"YYYY-MM-DD" o null}]}
 
-CRÍTICO — Moneda: "dólares","dolar","USD","U$S","us$","usd"→currency:"USD" | sin mención o "pesos"→currency:"UYU"
-CRÍTICO — ignorar $, $U, U$S al extraer monto
+CRÍTICO — Moneda: "dólares","dolar","USD","U$S","us$","usd"→currency:"USD" | "euros","euro","EUR","€"→currency:"EUR" | sin mención o "pesos"→currency:"UYU"
+CRÍTICO — ignorar $, $U, U$S, € al extraer monto
+CRÍTICO — "alquiler": alquiler, renta, arrendamiento
 CRÍTICO — "belleza": uñas, peluquería, cremas, maquillaje, manicura, pedicura, perfume, skincare
 CRÍTICO — múltiples gastos → múltiples items
+Tarjetas disponibles: ${cards.join(', ') || 'ninguna'}
 
 ═══ INGRESOS ═══
-Si es sueldo, cobro recibido, freelance: {"type":"income","description":"Sueldo"|descripción corta,"amount":número,"currency":"UYU"|"USD"}
+Si es sueldo, cobro recibido, freelance: {"type":"income","description":"Sueldo"|descripción corta,"amount":número,"currency":"UYU"|"USD"|"EUR"}
 
 ═══ AHORROS ═══
-Si ahorró o guardó dinero: {"type":"savings","description":"Ahorro"|descripción corta,"amount":número,"currency":"UYU"|"USD"}
+Si ahorró o guardó dinero: {"type":"savings","description":"Ahorro"|descripción corta,"amount":número,"currency":"UYU"|"USD"|"EUR"}
 
 ═══ CONSULTAS ═══
 {"type":"query","query":"owed"|"category_total"|"monthly_total","category":null o categoría,"month":"YYYY-MM"}
 
 ═══ REGLAS ═══
 - Sin monto claro → {"error":"sin_monto"}
-- "itau"→"Itaú" | "brou"→"BROU" | "scotia"→"Scotiabank"
 - "este mes"→"${monthStr}" | "el mes pasado"→mes anterior
 - Respondé ÚNICAMENTE con JSON válido, sin texto adicional`
 
@@ -334,7 +356,7 @@ Si ahorró o guardó dinero: {"type":"savings","description":"Ahorro"|descripci�
         type: parsed.type,
         description: parsed.description ?? (parsed.type === 'income' ? 'Sueldo' : 'Ahorro'),
         amount: Number(parsed.amount),
-        currency: parsed.currency === 'USD' ? 'USD' : 'UYU',
+        currency: normCurrency(parsed.currency),
       }
     }
     let rawItems: unknown[] = []
@@ -342,7 +364,7 @@ Si ahorró o guardó dinero: {"type":"savings","description":"Ahorro"|descripci�
     else if (parsed.amount && Number(parsed.amount) > 0) rawItems = [parsed]
     const items: ExpenseItem[] = (rawItems as { description?: string; amount?: unknown; currency?: string; bank?: string | null; category?: string | null; installments?: unknown; date?: string | null }[])
       .filter(i => i.amount && Number(i.amount) > 0)
-      .map(i => ({ description: i.description ?? 'Gasto', amount: Number(i.amount), currency: i.currency === 'USD' ? 'USD' : 'UYU', bank: i.bank ?? null, category: i.category ?? null, installments: i.installments ? Number(i.installments) : null, date: i.date ?? null }))
+      .map(i => ({ description: i.description ?? 'Gasto', amount: Number(i.amount), currency: normCurrency(i.currency), bank: i.bank ?? null, category: i.category ?? null, installments: i.installments ? Number(i.installments) : null, date: i.date ?? null }))
     if (items.length === 0) return null
     return { type: 'expenses', items }
   } catch { return null }
@@ -380,6 +402,75 @@ async function transcribeAudio(url: string, mimeType: string): Promise<string | 
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+function normCurrency(c: string | undefined | null): 'UYU' | 'USD' | 'EUR' {
+  if (c === 'USD') return 'USD'
+  if (c === 'EUR') return 'EUR'
+  return 'UYU'
+}
+
+async function downloadMedia(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { 'Authorization': 'Basic ' + btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`) }
+    })
+    if (!res.ok) return null
+    const buffer = await res.arrayBuffer()
+    const bytes = new Uint8Array(buffer)
+    let binary = ''
+    bytes.forEach(b => { binary += String.fromCharCode(b) })
+    return btoa(binary)
+  } catch { return null }
+}
+
+async function saveAndConfirmExpenses(
+  items: ExpenseItem[],
+  phoneUser: { user_id: string; last_expense_ids: string[] | null; pending_edit: boolean },
+  from: string,
+  isLegacyUser: boolean,
+): Promise<NextResponse> {
+  const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(phoneUser.user_id)
+  const isOwed = isLegacyUser && !!OWED_USER_EMAIL && authUser?.user?.email === OWED_USER_EMAIL
+  const now = new Date(Date.now() - 3 * 60 * 60 * 1000)
+  const allEntries: Record<string, unknown>[] = []
+  for (const item of items) {
+    const expenseDate = item.date ?? `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`
+    const installments = item.installments && item.installments > 1 ? item.installments : 1
+    const installmentAmount = Math.round((item.amount / installments) * 100) / 100
+    const [baseYear, baseMonthNum] = expenseDate.split('-').map(Number)
+    for (let i = 0; i < installments; i++) {
+      const d = new Date(Date.UTC(baseYear, baseMonthNum - 1 + i, 1))
+      const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+      allEntries.push({
+        user_id: phoneUser.user_id,
+        description: installments > 1 ? `${item.description} (${i + 1}/${installments})` : item.description,
+        amount: installmentAmount, currency: item.currency, bank: item.bank,
+        month, expense_date: expenseDate, category: item.category,
+        is_owed: isOwed && !!item.bank,
+      })
+    }
+  }
+  const { data: inserted, error } = await supabaseAdmin.from('expenses').insert(allEntries).select('id')
+  if (error) return twiml('❌ Error al guardar. Intentá de nuevo.')
+  const savedIds = (inserted ?? []).map((r: { id: string }) => r.id)
+  await supabaseAdmin.from('phone_users')
+    .update({ last_expense_ids: savedIds, pending_edit: false })
+    .eq('whatsapp_phone', from)
+  const fmt = (n: number, cur: string) => cur === 'USD' ? `USD ${n.toLocaleString('es-UY')}` : cur === 'EUR' ? `EUR ${n.toLocaleString('es-UY')}` : `$${n.toLocaleString('es-UY')}`
+  const actionHint = '\n\nRespondé *editar* o *borrar* para modificarlo.'
+  if (items.length === 1) {
+    const item = items[0]
+    const parts = [
+      `✅ *${item.description}* guardado`,
+      fmt(item.amount, item.currency),
+      item.bank ? `Tarjeta: ${item.bank}` : 'Efectivo',
+      item.category ? CATEGORY_LABELS[item.category] : null,
+    ].filter(Boolean).join(' · ')
+    return twiml(parts + actionHint)
+  }
+  const lines = items.map(i => `• ${i.description}: ${fmt(i.amount, i.currency)}`).join('\n')
+  return twiml(`✅ ${items.length} gastos guardados\n${lines}${actionHint}`)
+}
+
 function twiml(message: string): NextResponse {
   const safe = message
     .replace(/&/g, '&amp;')
