@@ -321,7 +321,7 @@ async function parseWithAI(text: string, originalExpense: Record<string, unknown
       const parsed = JSON.parse(clean)
       if (parsed.type === 'expenses' && Array.isArray(parsed.items) && parsed.items.length > 0) {
         const i = parsed.items[0]
-        return { type: 'expenses', items: [{ description: i.description, amount: Number(i.amount), currency: normCurrency(i.currency), bank: i.bank ?? null, category: i.category ?? null, installments: null, date: null }] }
+        return { type: 'expenses', items: [{ description: i.description, amount: Number(i.amount), currency: normCurrency(i.currency, defaultCurrency), bank: i.bank ?? null, category: i.category ?? null, installments: null, date: null }] }
       }
       return null
     } catch { return null }
@@ -333,7 +333,7 @@ Tu tarea: determinar si el mensaje contiene GASTOS, INGRESOS, AHORROS o una CONS
 ═══ GASTOS ═══
 {"type":"expenses","items":[{"description":"nombre corto (2-4 palabras)","amount":número,"currency":"UYU"|"USD"|"EUR","bank":${cardOptions},"category":"comida"|"nafta"|"ropa"|"hogar"|"alquiler"|"salud"|"ocio"|"transporte"|"tech"|"mascotas"|"educacion"|"regalos"|"facturas"|"viajes"|"belleza"|null,"installments":número o null,"date":"YYYY-MM-DD" o null}]}
 
-CRÍTICO — Moneda: "dólares","dolar","USD","U$S","us$","usd"→currency:"USD" | "euros","euro","EUR","€"→currency:"EUR" | sin mención o "pesos"→currency:"UYU"
+CRÍTICO — Moneda: "dólares","dolar","USD","U$S","us$","usd"→currency:"USD" | "euros","euro","EUR","€"→currency:"EUR" | "pesos"→currency:"UYU" | sin mención→currency:"${defaultCurrency}"
 CRÍTICO — ignorar $, $U, U$S, € al extraer monto
 CRÍTICO — "alquiler": alquiler, renta, arrendamiento
 CRÍTICO — "belleza": uñas, peluquería, cremas, maquillaje, manicura, pedicura, perfume, skincare
@@ -375,7 +375,7 @@ Si ahorró o guardó dinero: {"type":"savings","description":"Ahorro"|descripci�
         type: parsed.type,
         description: parsed.description ?? (parsed.type === 'income' ? 'Sueldo' : 'Ahorro'),
         amount: Number(parsed.amount),
-        currency: normCurrency(parsed.currency),
+        currency: normCurrency(parsed.currency, defaultCurrency),
       }
     }
     let rawItems: unknown[] = []
@@ -383,7 +383,7 @@ Si ahorró o guardó dinero: {"type":"savings","description":"Ahorro"|descripci�
     else if (parsed.amount && Number(parsed.amount) > 0) rawItems = [parsed]
     const items: ExpenseItem[] = (rawItems as { description?: string; amount?: unknown; currency?: string; bank?: string | null; category?: string | null; installments?: unknown; date?: string | null }[])
       .filter(i => i.amount && Number(i.amount) > 0)
-      .map(i => ({ description: i.description ?? 'Gasto', amount: Number(i.amount), currency: normCurrency(i.currency), bank: i.bank ?? null, category: i.category ?? null, installments: i.installments ? Number(i.installments) : null, date: i.date ?? null }))
+      .map(i => ({ description: i.description ?? 'Gasto', amount: Number(i.amount), currency: normCurrency(i.currency, defaultCurrency), bank: i.bank ?? null, category: i.category ?? null, installments: i.installments ? Number(i.installments) : null, date: i.date ?? null }))
     if (items.length === 0) return null
     return { type: 'expenses', items }
   } catch { return null }
@@ -471,10 +471,11 @@ async function transcribeAudio(url: string, mimeType: string): Promise<string | 
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function normCurrency(c: string | undefined | null): 'UYU' | 'USD' | 'EUR' {
+function normCurrency(c: string | undefined | null, defaultCurrency: 'UYU' | 'USD' | 'EUR' = 'UYU'): 'UYU' | 'USD' | 'EUR' {
   if (c === 'USD') return 'USD'
   if (c === 'EUR') return 'EUR'
-  return 'UYU'
+  if (c === 'UYU') return 'UYU'
+  return defaultCurrency
 }
 
 async function downloadMedia(url: string): Promise<string | null> {
