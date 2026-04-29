@@ -562,6 +562,8 @@ export default function Dashboard() {
   const incomeTotalUSD = incomes.filter(i => i.currency === 'USD').reduce((s, i) => s + i.amount, 0)
   const savingsTotalUYU = savings.filter(s => s.currency === 'UYU').reduce((acc, s) => acc + s.amount, 0)
   const savingsTotalUSD = savings.filter(s => s.currency === 'USD').reduce((acc, s) => acc + s.amount, 0)
+  const cashExpensesUYU = expenses.filter(e => !e.bank && e.currency === 'UYU').reduce((s, e) => s + e.amount, 0)
+  const cashExpensesUSD = expenses.filter(e => !e.bank && e.currency === 'USD').reduce((s, e) => s + e.amount, 0)
   const viewingShared = activeAccount && !activeAccount.isOwn
   const isLegacy = userSettings?.is_legacy ?? true
   const userCurrencies = userSettings?.currencies ?? ['UYU', 'USD']
@@ -749,6 +751,56 @@ export default function Dashboard() {
               </div>
             )}
           </div>
+
+          {/* Balance en efectivo */}
+          {(incomeTotalUYU > 0 || incomeTotalUSD > 0) && (cashExpensesUYU > 0 || cashExpensesUSD > 0) && (
+            <>
+              <div className="border-t border-gray-100" />
+              <div>
+                <p className="text-sm font-semibold text-gray-700 mb-2">💰 Balance en efectivo</p>
+                <div className="space-y-1.5">
+                  {incomeTotalUYU > 0 && (
+                    <div className="flex items-center justify-between text-xs text-gray-500">
+                      <span>Ingresos</span>
+                      <span className="font-medium text-green-600">{formatMoney(incomeTotalUYU, 'UYU')}</span>
+                    </div>
+                  )}
+                  {cashExpensesUYU > 0 && (
+                    <div className="flex items-center justify-between text-xs text-gray-500">
+                      <span>— Gastos en efectivo</span>
+                      <span className="font-medium text-red-500">−{formatMoney(cashExpensesUYU, 'UYU')}</span>
+                    </div>
+                  )}
+                  {incomeTotalUYU > 0 && cashExpensesUYU > 0 && (
+                    <div className="flex items-center justify-between pt-1 border-t border-gray-100">
+                      <span className="text-sm font-semibold text-gray-700">Disponible</span>
+                      <span className="text-sm font-bold" style={{ color: incomeTotalUYU - cashExpensesUYU >= 0 ? '#16a34a' : '#dc2626' }}>
+                        {formatMoney(incomeTotalUYU - cashExpensesUYU, 'UYU')}
+                      </span>
+                    </div>
+                  )}
+                  {incomeTotalUSD > 0 && cashExpensesUSD > 0 && (
+                    <>
+                      <div className="flex items-center justify-between text-xs text-gray-500">
+                        <span>Ingresos USD</span>
+                        <span className="font-medium text-green-600">{formatMoney(incomeTotalUSD, 'USD')}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-gray-500">
+                        <span>— Gastos efectivo USD</span>
+                        <span className="font-medium text-red-500">−{formatMoney(cashExpensesUSD, 'USD')}</span>
+                      </div>
+                      <div className="flex items-center justify-between pt-1 border-t border-gray-100">
+                        <span className="text-sm font-semibold text-gray-700">Disponible USD</span>
+                        <span className="text-sm font-bold" style={{ color: incomeTotalUSD - cashExpensesUSD >= 0 ? '#16a34a' : '#dc2626' }}>
+                          {formatMoney(incomeTotalUSD - cashExpensesUSD, 'USD')}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Totals */}
