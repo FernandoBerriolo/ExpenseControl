@@ -68,6 +68,14 @@ CRÍTICO — Extracción de monto (ignorar $, $U, U$S, €):
 - "gasté 30 dólares" → amount: 30, currency: "USD"
 - "pagué 20 euros" → amount: 20, currency: "EUR"
 
+CRÍTICO — Formato numérico español (es-UY): el punto "." separa miles, la coma "," es decimal.
+- "1.500" → amount: 1500 (NO 1.5)
+- "30.000" → amount: 30000
+- "1,50" → amount: 1.5
+- "1.500,50" → amount: 1500.5
+- "25,990" → amount: 25990
+Devolvé siempre el amount como número JSON puro sin puntos de miles ni comas.
+
 CRÍTICO — Categoría "belleza": uñas, peluquería, corte, tintura, cremas, maquillaje, depilación, manicura, pedicura, perfume, skincare
 CRÍTICO — Categoría "alquiler": alquiler, renta, arrendamiento
 
