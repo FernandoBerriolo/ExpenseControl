@@ -562,8 +562,10 @@ export default function Dashboard() {
   const incomeTotalUSD = incomes.filter(i => i.currency === 'USD').reduce((s, i) => s + i.amount, 0)
   const savingsTotalUYU = savings.filter(s => s.currency === 'UYU').reduce((acc, s) => acc + s.amount, 0)
   const savingsTotalUSD = savings.filter(s => s.currency === 'USD').reduce((acc, s) => acc + s.amount, 0)
-  const cashExpensesUYU = expenses.filter(e => !e.bank && e.currency === 'UYU').reduce((s, e) => s + e.amount, 0)
-  const cashExpensesUSD = expenses.filter(e => !e.bank && e.currency === 'USD').reduce((s, e) => s + e.amount, 0)
+  const debitCardNames = new Set(paymentMethods.filter((m: PaymentMethod) => m.type === 'debit').map((m: PaymentMethod) => m.name))
+  const isCashOrDebit = (bank: string | null) => !bank || debitCardNames.has(bank)
+  const cashExpensesUYU = expenses.filter(e => isCashOrDebit(e.bank) && e.currency === 'UYU').reduce((s, e) => s + e.amount, 0)
+  const cashExpensesUSD = expenses.filter(e => isCashOrDebit(e.bank) && e.currency === 'USD').reduce((s, e) => s + e.amount, 0)
   const viewingShared = activeAccount && !activeAccount.isOwn
   const isLegacy = userSettings?.is_legacy ?? true
   const userCurrencies = userSettings?.currencies ?? ['UYU', 'USD']
@@ -757,7 +759,7 @@ export default function Dashboard() {
             <>
               <div className="border-t border-gray-100" />
               <div>
-                <p className="text-sm font-semibold text-gray-700 mb-2">💰 Balance en efectivo</p>
+                <p className="text-sm font-semibold text-gray-700 mb-2">💰 Balance disponible</p>
                 <div className="space-y-1.5">
                   {incomeTotalUYU > 0 && (
                     <div className="flex items-center justify-between text-xs text-gray-500">
@@ -767,7 +769,7 @@ export default function Dashboard() {
                   )}
                   {cashExpensesUYU > 0 && (
                     <div className="flex items-center justify-between text-xs text-gray-500">
-                      <span>— Gastos en efectivo</span>
+                      <span>— Efectivo y débito</span>
                       <span className="font-medium text-red-500">−{formatMoney(cashExpensesUYU, 'UYU')}</span>
                     </div>
                   )}
@@ -786,7 +788,7 @@ export default function Dashboard() {
                         <span className="font-medium text-green-600">{formatMoney(incomeTotalUSD, 'USD')}</span>
                       </div>
                       <div className="flex items-center justify-between text-xs text-gray-500">
-                        <span>— Gastos efectivo USD</span>
+                        <span>— Efectivo y débito USD</span>
                         <span className="font-medium text-red-500">−{formatMoney(cashExpensesUSD, 'USD')}</span>
                       </div>
                       <div className="flex items-center justify-between pt-1 border-t border-gray-100">
