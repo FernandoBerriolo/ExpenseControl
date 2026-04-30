@@ -28,12 +28,13 @@ export async function POST(req: NextRequest) {
 
   // Fetch payment methods and user settings in parallel
   const [pmRes, settingsRes] = await Promise.all([
-    supabaseAdmin.from('payment_methods').select('name, type').eq('user_id', user.id).order('sort_order'),
+    supabaseAdmin.from('payment_methods').select('name, type, closing_day').eq('user_id', user.id).order('sort_order'),
     supabaseAdmin.from('user_settings').select('is_legacy').eq('user_id', user.id).single(),
   ])
-  const cards: string[] = ((pmRes.data ?? []) as { name: string; type: string }[])
-    .filter(m => m.type !== 'cash')
-    .map(m => m.name)
+  const allMethods = (pmRes.data ?? []) as { name: string; type: string; closing_day: number | null }[]
+  const cards: string[] = allMethods.filter(m => m.type !== 'cash').map(m => m.name)
+  const closingDays: Record<string, number> = {}
+  for (const m of allMethods) { if (m.closing_day) closingDays[m.name] = m.closing_day }
   const isLegacy = (settingsRes.data as { is_legacy: boolean } | null)?.is_legacy ?? true
 
   let result = null
@@ -131,11 +132,10 @@ export async function POST(req: NextRequest) {
     const expenseDate = item.date ?? todayStr
     const installments = item.installments && item.installments > 1 ? item.installments : 1
     const installmentAmount = Math.round((item.amount / installments) * 100) / 100
-    const [baseYear, baseMonthNum] = expenseDate.split('-').map(Number)
+    const billingMonth0 = getBillingMonth(expenseDate, item.bank, closingDays)
 
     for (let i = 0; i < installments; i++) {
-      const d = new Date(Date.UTC(baseYear, baseMonthNum - 1 + i, 1))
-      const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+      const month = addMonths(billingMonth0, i)
       allEntries.push({
         user_id:      user.id,
         description:  installments > 1 ? `${item.description} (${i + 1}/${installments})` : item.description,
@@ -185,4 +185,20 @@ function formatMonthLabel(month: string): string {
   const names = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']
   const now = new Date(Date.now() - 3 * 60 * 60 * 1000)
   return year === now.getUTCFullYear() ? names[m - 1] : `${names[m - 1]} ${year}`
+}
+
+function getBillingMonth(dateStr: string, bank: string | null, closingDays: Record<string, number>): string {
+  if (!bank || !closingDays[bank]) return dateStr.substring(0, 7)
+  const [year, month, day] = dateStr.split('-').map(Number)
+  if (day > closingDays[bank]) {
+    const d = new Date(year, month, 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  }
+  return `${year}-${String(month).padStart(2, '0')}`
+}
+
+function addMonths(monthStr: string, n: number): string {
+  const [year, month] = monthStr.split('-').map(Number)
+  const d = new Date(year, month - 1 + n, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }

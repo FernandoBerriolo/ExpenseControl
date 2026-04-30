@@ -167,12 +167,13 @@ export async function POST(req: NextRequest) {
 
   // Fetch payment methods and user settings
   const [pmRes, settingsRes] = await Promise.all([
-    supabaseAdmin.from('payment_methods').select('name, type').eq('user_id', phoneUser.user_id).order('sort_order'),
+    supabaseAdmin.from('payment_methods').select('name, type, closing_day').eq('user_id', phoneUser.user_id).order('sort_order'),
     supabaseAdmin.from('user_settings').select('is_legacy, default_currency').eq('user_id', phoneUser.user_id).single(),
   ])
-  const userCards: string[] = ((pmRes.data ?? []) as { name: string; type: string }[])
-    .filter(m => m.type !== 'cash')
-    .map(m => m.name)
+  const allMethods = (pmRes.data ?? []) as { name: string; type: string; closing_day: number | null }[]
+  const userCards: string[] = allMethods.filter(m => m.type !== 'cash').map(m => m.name)
+  const closingDays: Record<string, number> = {}
+  for (const m of allMethods) { if (m.closing_day) closingDays[m.name] = m.closing_day }
   const isLegacyUser = (settingsRes.data as { is_legacy: boolean } | null)?.is_legacy ?? true
   const defaultCurrency = (settingsRes.data as { default_currency?: string } | null)?.default_currency as 'UYU' | 'USD' | 'EUR' ?? 'UYU'
 
@@ -278,11 +279,10 @@ export async function POST(req: NextRequest) {
 
     const installments = item.installments && item.installments > 1 ? item.installments : 1
     const installmentAmount = Math.round((item.amount / installments) * 100) / 100
-    const [baseYear, baseMonthNum] = expenseDate.split('-').map(Number)
+    const billingMonth0 = getBillingMonth(expenseDate, item.bank, closingDays)
 
     for (let i = 0; i < installments; i++) {
-      const d = new Date(Date.UTC(baseYear, baseMonthNum - 1 + i, 1))
-      const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+      const month = addMonths(billingMonth0, i)
       allEntries.push({
         user_id:      phoneUser.user_id,
         description:  installments > 1 ? `${item.description} (${i + 1}/${installments})` : item.description,
@@ -786,4 +786,20 @@ function normCurrency(c: string | undefined | null): 'UYU' | 'USD' | 'EUR' {
   if (c === 'USD') return 'USD'
   if (c === 'EUR') return 'EUR'
   return 'UYU'
+}
+
+function getBillingMonth(dateStr: string, bank: string | null, closingDays: Record<string, number>): string {
+  if (!bank || !closingDays[bank]) return dateStr.substring(0, 7)
+  const [year, month, day] = dateStr.split('-').map(Number)
+  if (day > closingDays[bank]) {
+    const d = new Date(year, month, 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  }
+  return `${year}-${String(month).padStart(2, '0')}`
+}
+
+function addMonths(monthStr: string, n: number): string {
+  const [year, month] = monthStr.split('-').map(Number)
+  const d = new Date(year, month - 1 + n, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
