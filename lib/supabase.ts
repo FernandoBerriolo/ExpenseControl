@@ -91,3 +91,51 @@ export type Account = {
   email: string
   isOwn: boolean
 }
+
+export type SharedGroup = {
+  id: string
+  name: string
+  theme: string
+  invite_code: string
+  created_by: string
+  currency: Currency
+  created_at: string
+}
+
+export type SharedGroupMember = {
+  id: string
+  group_id: string
+  user_id: string
+  user_email: string
+  joined_at: string
+}
+
+export type SharedGroupExpense = {
+  id: string
+  group_id: string
+  description: string
+  total_amount: number
+  currency: Currency
+  member_count: number
+  created_by: string
+  created_at: string
+}
+
+export type SharedExpensePayment = {
+  id: string
+  expense_id: string
+  user_id: string
+  user_email: string
+  amount: number
+  note: string | null
+  created_at: string
+}
+
+export const SHARED_THEMES = [
+  { value: 'general',  label: 'General',   emoji: '📋' },
+  { value: 'viaje',    label: 'Viaje',     emoji: '✈️' },
+  { value: 'juntada',  label: 'Juntada',   emoji: '🎉' },
+  { value: 'salida',   label: 'Salida',    emoji: '🍽️' },
+  { value: 'hogar',    label: 'Hogar',     emoji: '🏠' },
+  { value: 'proyecto', label: 'Proyecto',  emoji: '💼' },
+] as const

@@ -624,6 +624,14 @@ export default function Dashboard() {
               </span>
             )}
             <button
+              onClick={() => router.push('/shared')}
+              className="w-9 h-9 flex items-center justify-center rounded-xl text-lg"
+              style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}
+              title="Gastos compartidos"
+            >
+              👥
+            </button>
+            <button
               onClick={() => { setShowShare(true); setJoinError(''); setJoinSuccess(''); setJoinCode('') }}
               className="w-9 h-9 flex items-center justify-center rounded-xl text-lg"
               style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}
