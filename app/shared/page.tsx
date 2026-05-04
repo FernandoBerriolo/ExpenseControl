@@ -8,6 +8,10 @@ function generateCode() {
   return Math.random().toString(36).substring(2, 10).toUpperCase()
 }
 
+function generateUUID() {
+  return crypto.randomUUID()
+}
+
 export default function SharedGroupsPage() {
   const router = useRouter()
   const [userId, setUserId] = useState('')
@@ -62,9 +66,12 @@ export default function SharedGroupsPage() {
     if (!session) return
 
     const code = generateCode()
+    const groupId = generateUUID()
+
     const { error: insertError } = await supabase
       .from('shared_groups')
       .insert({
+        id: groupId,
         name: createName.trim(),
         theme: createTheme,
         currency: createCurrency,
@@ -74,16 +81,8 @@ export default function SharedGroupsPage() {
 
     if (insertError) { setCreateError('Error al crear el grupo'); setCreateLoading(false); return }
 
-    const { data: group, error: fetchError } = await supabase
-      .from('shared_groups')
-      .select('id')
-      .eq('invite_code', code)
-      .single()
-
-    if (fetchError || !group) { setCreateError('Error al obtener el grupo'); setCreateLoading(false); return }
-
     await supabase.from('shared_group_members').insert({
-      group_id: group.id,
+      group_id: groupId,
       user_id: session.user.id,
       user_email: session.user.email,
     })
@@ -92,7 +91,7 @@ export default function SharedGroupsPage() {
     setShowCreate(false)
     setCreateName('')
     setCreateTheme('general')
-    router.push(`/shared/${group.id}`)
+    router.push(`/shared/${groupId}`)
   }
 
   async function handleJoin() {
