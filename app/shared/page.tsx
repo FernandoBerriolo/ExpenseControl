@@ -102,16 +102,13 @@ export default function SharedGroupsPage() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return
 
-    const { data: group } = await supabase
-      .from('shared_groups')
-      .select('id')
-      .eq('invite_code', code)
-      .single()
+    const { data: groupId } = await supabase
+      .rpc('find_group_by_invite_code', { code })
 
-    if (!group) { setJoinError('Código inválido'); setJoinLoading(false); return }
+    if (!groupId) { setJoinError('Código inválido'); setJoinLoading(false); return }
 
     const { error } = await supabase.from('shared_group_members').insert({
-      group_id: group.id,
+      group_id: groupId,
       user_id: session.user.id,
       user_email: session.user.email,
     })
@@ -121,7 +118,7 @@ export default function SharedGroupsPage() {
 
     setJoinLoading(false)
     setShowJoin(false)
-    router.push(`/shared/${group.id}`)
+    router.push(`/shared/${groupId}`)
   }
 
   const themeInfo = (theme: string) => SHARED_THEMES.find(t => t.value === theme) ?? SHARED_THEMES[0]
