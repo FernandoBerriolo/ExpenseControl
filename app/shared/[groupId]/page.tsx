@@ -168,7 +168,7 @@ export default function GroupDetailPage() {
     let shouldPay = 0
     let paid = 0
     for (const exp of expenses) {
-      shouldPay += exp.total_amount / exp.member_count
+      shouldPay += exp.total_amount / members.length
       const expPayments = payments.filter(p => p.expense_id === exp.id && p.user_id === m.user_id)
       paid += expPayments.reduce((s, p) => s + Number(p.amount), 0)
     }
@@ -292,7 +292,7 @@ export default function GroupDetailPage() {
                 {expenses.map(exp => {
                   const expPayments = payments.filter(p => p.expense_id === exp.id)
                   const totalPaid = expPayments.reduce((s, p) => s + Number(p.amount), 0)
-                  const perPerson = exp.total_amount / exp.member_count
+                  const perPerson = exp.total_amount / members.length
                   const myPayments = expPayments.filter(p => p.user_id === userId)
                   const myPaid = myPayments.reduce((s, p) => s + Number(p.amount), 0)
                   const myPending = Math.max(0, perPerson - myPaid)
@@ -504,7 +504,7 @@ export default function GroupDetailPage() {
                   {expenses.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-gray-800 space-y-1">
                       {expenses.map(exp => {
-                        const perPerson = exp.total_amount / exp.member_count
+                        const perPerson = exp.total_amount / members.length
                         const expPayments = payments.filter(p => p.expense_id === exp.id && p.user_id === ms.user_id)
                         const paid = expPayments.reduce((s, p) => s + Number(p.amount), 0)
                         const pending = Math.max(0, perPerson - paid)
