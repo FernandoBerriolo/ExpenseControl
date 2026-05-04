@@ -62,7 +62,7 @@ export default function SharedGroupsPage() {
     if (!session) return
 
     const code = generateCode()
-    const { data: group, error } = await supabase
+    const { error: insertError } = await supabase
       .from('shared_groups')
       .insert({
         name: createName.trim(),
@@ -71,10 +71,16 @@ export default function SharedGroupsPage() {
         invite_code: code,
         created_by: session.user.id,
       })
-      .select()
+
+    if (insertError) { setCreateError('Error al crear el grupo'); setCreateLoading(false); return }
+
+    const { data: group, error: fetchError } = await supabase
+      .from('shared_groups')
+      .select('id')
+      .eq('invite_code', code)
       .single()
 
-    if (error) { setCreateError('Error al crear el grupo'); setCreateLoading(false); return }
+    if (fetchError || !group) { setCreateError('Error al obtener el grupo'); setCreateLoading(false); return }
 
     await supabase.from('shared_group_members').insert({
       group_id: group.id,
