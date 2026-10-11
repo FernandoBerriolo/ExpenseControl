@@ -624,6 +624,14 @@ export default function Dashboard() {
               </span>
             )}
             <button
+              onClick={() => router.push('/alquiler')}
+              className="w-9 h-9 flex items-center justify-center rounded-xl text-lg"
+              style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}
+              title="Mi apartamento"
+            >
+              🏠
+            </button>
+            <button
               onClick={() => router.push('/shared')}
               className="w-9 h-9 flex items-center justify-center rounded-xl text-lg"
               style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}
