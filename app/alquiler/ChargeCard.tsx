@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react'
 import { supabase, type Currency } from '@/lib/supabase'
 import {
-  RENTAL_BUCKET, chargeTitle, kindInfo,
+  RENTAL_BUCKET, chargeTitle, isRepeatable, kindInfo,
   type ReceiptDocType, type RentalCharge, type RentalReceipt, type RentalSettings,
 } from '@/lib/alquiler/types'
 import { formatBytes, formatDayMonth, formatMoney, parseAmount, todayStr } from '@/lib/alquiler/format'
@@ -54,10 +54,10 @@ export default function ChargeCard({ charge, receipts, settings, userId, homeId,
   async function saveEdit() {
     const parsed = parseAmount(amount)
     if (Number.isNaN(parsed)) { setErr('El monto no es válido'); return }
-    if (charge.kind === 'otro' && !label.trim()) { setErr('Ingresá un nombre para el gasto'); return }
+    if (isRepeatable(charge.kind) && !label.trim()) { setErr('Ingresá una descripción del gasto'); return }
     setBusy(true); setErr('')
     const { error } = await supabase.from('rental_charges').update({
-      label:    charge.kind === 'otro' ? label.trim() : charge.label,
+      label:    isRepeatable(charge.kind) ? label.trim() : charge.label,
       amount:   parsed,
       currency,
       due_date: dueDate || null,
@@ -147,6 +147,9 @@ export default function ChargeCard({ charge, receipts, settings, userId, homeId,
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="font-semibold text-gray-800 truncate">{info.emoji} {chargeTitle(charge)}</p>
+          {isRepeatable(charge.kind) && charge.kind !== 'otro' && (
+            <p className="text-xs text-gray-400">{info.label}</p>
+          )}
           <p className="text-lg font-bold text-gray-900">{formatMoney(charge.amount, charge.currency)}</p>
           <p className="text-xs text-gray-400">
             {charge.due_date ? `Vence ${formatDayMonth(charge.due_date)}` : 'Sin vencimiento'}
@@ -227,8 +230,8 @@ export default function ChargeCard({ charge, receipts, settings, userId, homeId,
 
       {editing ? (
         <div className="space-y-2 pt-1">
-          {charge.kind === 'otro' && (
-            <input className={inputCls} placeholder="Nombre del gasto" value={label} onChange={e => setLabel(e.target.value)} />
+          {isRepeatable(charge.kind) && (
+            <input className={inputCls} placeholder={info.placeholder ?? 'Descripción'} value={label} onChange={e => setLabel(e.target.value)} />
           )}
           <div className="flex gap-2">
             <input className={inputCls} inputMode="decimal" placeholder="Monto" value={amount} onChange={e => setAmount(e.target.value)} />

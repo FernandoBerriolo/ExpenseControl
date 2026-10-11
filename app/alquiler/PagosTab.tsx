@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase, type Currency } from '@/lib/supabase'
 import {
-  MONTHLY_KINDS, RENTAL_KINDS,
+  MONTHLY_KINDS, RENTAL_KINDS, isRepeatable, kindInfo,
   type RentalCharge, type RentalKind, type RentalReceipt, type RentalSettings,
 } from '@/lib/alquiler/types'
 import { currentMonth, formatMoney, monthLabel, parseAmount, shiftMonth } from '@/lib/alquiler/format'
@@ -46,7 +46,7 @@ export default function PagosTab({ userId, homeId, settings }: { userId: string;
 
   useEffect(() => { setLoading(true); load() }, [load])
 
-  const presentKinds = useMemo(() => new Set(charges.filter(c => c.kind !== 'otro').map(c => c.kind)), [charges])
+  const presentKinds = useMemo(() => new Set(charges.filter(c => !isRepeatable(c.kind)).map(c => c.kind)), [charges])
   const missingMonthly = MONTHLY_KINDS.filter(k => !presentKinds.has(k))
 
   async function addMonthlyItems() {
@@ -144,7 +144,7 @@ export default function PagosTab({ userId, homeId, settings }: { userId: string;
           ) : (
             <button onClick={() => setShowAdd(true)}
               className="w-full py-3 rounded-2xl text-sm font-semibold text-gray-500 bg-white shadow-sm">
-              + Agregar otro gasto (impuesto municipal, reparación…)
+              + Agregar gasto (garantía, impuesto, comida, suscripciones…)
             </button>
           )}
         </>
@@ -161,9 +161,13 @@ function AddChargeForm({ userId, homeId, month, presentKinds, onDone, onCancel }
   onDone: () => void
   onCancel: () => void
 }) {
-  // Los rubros mensuales solo se ofrecen si todavía no existen; "otro" puede repetirse
-  const options = RENTAL_KINDS.filter(k => k.value === 'otro' || !presentKinds.has(k.value))
-  const [kind, setKind] = useState<RentalKind>(options.some(o => o.value === 'impuesto_municipal') ? 'impuesto_municipal' : 'otro')
+  // Los rubros fijos solo se ofrecen si todavía no existen este mes; las categorías de otros gastos se pueden repetir
+  const fixedOptions = RENTAL_KINDS.filter(k => !k.repeatable && !presentKinds.has(k.value))
+  const extraOptions = RENTAL_KINDS.filter(k => k.repeatable)
+  const [kind, setKind] = useState<RentalKind>(
+    (fixedOptions.find(o => !MONTHLY_KINDS.includes(o.value)) ?? extraOptions[0]).value
+  )
+  const info = kindInfo(kind)
   const [label, setLabel] = useState('')
   const [amount, setAmount] = useState('')
   const [currency, setCurrency] = useState<Currency>('UYU')
@@ -173,11 +177,11 @@ function AddChargeForm({ userId, homeId, month, presentKinds, onDone, onCancel }
   async function save() {
     const parsed = parseAmount(amount)
     if (Number.isNaN(parsed)) { setErr('El monto no es válido'); return }
-    if (kind === 'otro' && !label.trim()) { setErr('Ingresá un nombre para el gasto'); return }
+    if (info.repeatable && !label.trim()) { setErr('Ingresá una descripción del gasto'); return }
     setBusy(true); setErr('')
     const { error } = await supabase.from('rental_charges').insert({
       home_id: homeId, user_id: userId, kind, period: month, currency, amount: parsed,
-      label: kind === 'otro' ? label.trim() : null,
+      label: info.repeatable ? label.trim() : null,
     })
     setBusy(false)
     if (error) { setErr(error.code === '23505' ? 'Ese rubro ya existe este mes' : 'No se pudo guardar'); return }
@@ -190,10 +194,17 @@ function AddChargeForm({ userId, homeId, month, presentKinds, onDone, onCancel }
     <div className="bg-white rounded-2xl shadow-sm p-4 space-y-2">
       <p className="font-semibold text-gray-800 text-sm">Nuevo gasto en {monthLabel(month)}</p>
       <select className={inputCls} value={kind} onChange={e => setKind(e.target.value as RentalKind)}>
-        {options.map(o => <option key={o.value} value={o.value}>{o.emoji} {o.label}</option>)}
+        {fixedOptions.length > 0 && (
+          <optgroup label="Rubros">
+            {fixedOptions.map(o => <option key={o.value} value={o.value}>{o.emoji} {o.label}</option>)}
+          </optgroup>
+        )}
+        <optgroup label="Otros gastos">
+          {extraOptions.map(o => <option key={o.value} value={o.value}>{o.emoji} {o.label}</option>)}
+        </optgroup>
       </select>
-      {kind === 'otro' && (
-        <input className={inputCls} placeholder="Nombre (ej: arreglo canilla)" value={label} onChange={e => setLabel(e.target.value)} />
+      {info.repeatable && (
+        <input className={inputCls} placeholder={info.placeholder ?? 'Descripción'} value={label} onChange={e => setLabel(e.target.value)} />
       )}
       <div className="flex gap-2">
         <input className={inputCls} inputMode="decimal" placeholder="Monto (opcional)" value={amount} onChange={e => setAmount(e.target.value)} />

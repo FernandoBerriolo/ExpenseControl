@@ -15,6 +15,7 @@ export default function ConfigTab({ userId, homeId, settings, onSaved }: {
   const [currency, setCurrency] = useState<Currency>(settings?.rent_currency ?? 'UYU')
   const [ute, setUte] = useState(settings?.ute_reference ?? '')
   const [adminUrl, setAdminUrl] = useState(settings?.admin_url ?? '')
+  const [unitInfo, setUnitInfo] = useState(settings?.unit_info ?? '')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
@@ -44,6 +45,7 @@ export default function ConfigTab({ userId, homeId, settings, onSaved }: {
       rent_currency: currency,
       ute_reference: ute.trim() || null,
       admin_url: url || null,
+      unit_info: unitInfo.trim() || null,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'home_id' })
     setBusy(false)
@@ -79,6 +81,12 @@ export default function ConfigTab({ userId, homeId, settings, onSaved }: {
       <div>
         <label className="text-xs font-medium text-gray-500">Web de gastos comunes</label>
         <input className={`${inputCls} mt-1`} placeholder="https://…" value={adminUrl} onChange={e => setAdminUrl(e.target.value)} />
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-gray-500">Datos del apartamento</label>
+        <textarea className={`${inputCls} mt-1`} rows={4} value={unitInfo} onChange={e => setUnitInfo(e.target.value)}
+          placeholder="Piso, apto, garage, cerradura… Lo usa el asistente para responder sobre tu caso." />
       </div>
 
       {err && <p className="text-xs text-red-500">{err}</p>}
