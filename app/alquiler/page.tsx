@@ -19,12 +19,14 @@ const TABS: { value: Tab; label: string }[] = [
 export default function AlquilerPage() {
   const router = useRouter()
   const [userId, setUserId] = useState('')
+  const [homeId, setHomeId] = useState('')
+  const [loadError, setLoadError] = useState('')
   const [settings, setSettings] = useState<RentalSettings | null>(null)
   const [ready, setReady] = useState(false)
   const [tab, setTab] = useState<Tab>('pagos')
 
-  const loadSettings = useCallback(async (uid: string) => {
-    const { data } = await supabase.from('rental_settings').select('*').eq('user_id', uid).maybeSingle()
+  const loadSettings = useCallback(async (hid: string) => {
+    const { data } = await supabase.from('rental_settings').select('*').eq('home_id', hid).maybeSingle()
     setSettings((data as RentalSettings | null) ?? null)
   }, [])
 
@@ -32,7 +34,15 @@ export default function AlquilerPage() {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) { router.replace('/login'); return }
       setUserId(session.user.id)
-      await loadSettings(session.user.id)
+      // El hogar es compartido: si la persona todavía no tiene uno, se le crea
+      const { data: hid, error } = await supabase.rpc('rental_ensure_home')
+      if (error || !hid) {
+        setLoadError('No se pudo cargar la sección. ¿Corriste supabase-schema-v10.sql en Supabase?')
+        setReady(true)
+        return
+      }
+      setHomeId(hid as string)
+      await loadSettings(hid as string)
       setReady(true)
     })
   }, [router, loadSettings])
@@ -64,11 +74,13 @@ export default function AlquilerPage() {
       <div className="max-w-lg mx-auto px-4 py-6">
         {!ready ? (
           <p className="text-center text-sm text-gray-400 py-8">Cargando…</p>
+        ) : loadError ? (
+          <p className="text-center text-sm text-red-500 py-8">{loadError}</p>
         ) : (
           <>
-            {tab === 'pagos' && <PagosTab userId={userId} settings={settings} />}
-            {tab === 'asistente' && <AsistenteTab userId={userId} />}
-            {tab === 'config' && <ConfigTab userId={userId} settings={settings} onSaved={() => loadSettings(userId)} />}
+            {tab === 'pagos' && <PagosTab userId={userId} homeId={homeId} settings={settings} />}
+            {tab === 'asistente' && <AsistenteTab userId={userId} homeId={homeId} />}
+            {tab === 'config' && <ConfigTab userId={userId} homeId={homeId} settings={settings} onSaved={() => loadSettings(homeId)} />}
           </>
         )}
       </div>

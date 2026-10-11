@@ -68,10 +68,18 @@ export async function POST(req: NextRequest) {
   const todayStr = now.toISOString().slice(0, 10)
   const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1)).toISOString().slice(0, 7)
 
+  // Los datos son del hogar (compartido entre sus miembros), no de un usuario suelto
+  const { data: membership } = await supabaseAdmin.from('rental_home_members')
+    .select('home_id').eq('user_id', user.id).maybeSingle()
+  const homeId = (membership as { home_id: string } | null)?.home_id
+  if (!homeId) {
+    return NextResponse.json({ reply: 'Todavía no tenés un apartamento configurado. Entrá a la pestaña Pagos primero.' })
+  }
+
   const [settingsRes, docsRes, chargesRes] = await Promise.all([
-    supabaseAdmin.from('rental_settings').select('*').eq('user_id', user.id).maybeSingle(),
-    supabaseAdmin.from('rental_documents').select('name, content').eq('user_id', user.id).order('created_at').order('id'),
-    supabaseAdmin.from('rental_charges').select('*').eq('user_id', user.id).gte('period', from)
+    supabaseAdmin.from('rental_settings').select('*').eq('home_id', homeId).maybeSingle(),
+    supabaseAdmin.from('rental_documents').select('name, content').eq('home_id', homeId).order('created_at').order('id'),
+    supabaseAdmin.from('rental_charges').select('*').eq('home_id', homeId).gte('period', from)
       .order('period', { ascending: false }).limit(300),
   ])
 
@@ -83,7 +91,7 @@ export async function POST(req: NextRequest) {
   const receiptsByCharge: Record<string, string[]> = {}
   if (charges.length > 0) {
     const { data: receipts } = await supabaseAdmin.from('rental_receipts')
-      .select('charge_id, doc_type').eq('user_id', user.id).in('charge_id', charges.map(c => c.id))
+      .select('charge_id, doc_type').eq('home_id', homeId).in('charge_id', charges.map(c => c.id))
     for (const r of (receipts ?? []) as { charge_id: string; doc_type: string }[]) {
       (receiptsByCharge[r.charge_id] ??= []).push(r.doc_type)
     }

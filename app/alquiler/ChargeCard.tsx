@@ -20,10 +20,11 @@ type Props = {
   receipts: RentalReceipt[]
   settings: RentalSettings | null
   userId: string
+  homeId: string
   onChanged: () => void
 }
 
-export default function ChargeCard({ charge, receipts, settings, userId, onChanged }: Props) {
+export default function ChargeCard({ charge, receipts, settings, userId, homeId, onChanged }: Props) {
   const info = kindInfo(charge.kind)
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -89,7 +90,7 @@ export default function ChargeCard({ charge, receipts, settings, userId, onChang
     const safeName = file.name
       .normalize('NFD').replace(/[̀-ͯ]/g, '')
       .replace(/[^a-zA-Z0-9._-]+/g, '_').slice(-80)
-    const path = `${userId}/${charge.id}/${Date.now()}-${safeName}`
+    const path = `${homeId}/${charge.id}/${Date.now()}-${safeName}`
 
     setBusy(true)
     const { error: upErr } = await supabase.storage.from(RENTAL_BUCKET)
@@ -97,7 +98,7 @@ export default function ChargeCard({ charge, receipts, settings, userId, onChang
     if (upErr) { setBusy(false); setErr('No se pudo subir el archivo'); return }
 
     const { error: dbErr } = await supabase.from('rental_receipts').insert({
-      charge_id: charge.id, user_id: userId, doc_type: docType,
+      charge_id: charge.id, home_id: homeId, user_id: userId, doc_type: docType,
       file_path: path, file_name: file.name, mime_type: file.type, size_bytes: file.size,
     })
     if (dbErr) {

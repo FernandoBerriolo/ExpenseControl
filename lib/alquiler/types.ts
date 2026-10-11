@@ -4,7 +4,7 @@ export type RentalKind = 'alquiler' | 'gastos_comunes' | 'luz' | 'wifi' | 'impue
 export type ReceiptDocType = 'comprobante' | 'factura'
 
 export type RentalSettings = {
-  user_id: string
+  home_id: string
   monthly_rent: number | null
   rent_currency: Currency
   ute_reference: string | null
@@ -13,7 +13,7 @@ export type RentalSettings = {
 
 export type RentalCharge = {
   id: string
-  user_id: string
+  home_id: string
   kind: RentalKind
   label: string | null
   period: string        // YYYY-MM
@@ -29,7 +29,7 @@ export type RentalCharge = {
 export type RentalReceipt = {
   id: string
   charge_id: string
-  user_id: string
+  home_id: string
   doc_type: ReceiptDocType
   file_path: string
   file_name: string
@@ -42,7 +42,11 @@ export type RentalDocument = {
   id: string
   name: string
   created_at: string
-  size?: number
+}
+
+export type RentalMember = {
+  user_id: string
+  user_email: string | null
 }
 
 export const RENTAL_BUCKET = 'rental-receipts'

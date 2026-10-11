@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase, type Currency } from '@/lib/supabase'
-import type { RentalSettings } from '@/lib/alquiler/types'
+import type { RentalMember, RentalSettings } from '@/lib/alquiler/types'
 import { parseAmount } from '@/lib/alquiler/format'
 
-export default function ConfigTab({ userId, settings, onSaved }: {
+export default function ConfigTab({ userId, homeId, settings, onSaved }: {
   userId: string
+  homeId: string
   settings: RentalSettings | null
   onSaved: () => void
 }) {
@@ -17,6 +18,12 @@ export default function ConfigTab({ userId, settings, onSaved }: {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
+  const [members, setMembers] = useState<RentalMember[]>([])
+
+  useEffect(() => {
+    supabase.from('rental_home_members').select('user_id, user_email').eq('home_id', homeId)
+      .then(({ data }) => setMembers((data ?? []) as RentalMember[]))
+  }, [homeId])
 
   async function save() {
     setMsg(''); setErr('')
@@ -31,13 +38,14 @@ export default function ConfigTab({ userId, settings, onSaved }: {
 
     setBusy(true)
     const { error } = await supabase.from('rental_settings').upsert({
+      home_id: homeId,
       user_id: userId,
       monthly_rent: parsed,
       rent_currency: currency,
       ute_reference: ute.trim() || null,
       admin_url: url || null,
       updated_at: new Date().toISOString(),
-    })
+    }, { onConflict: 'home_id' })
     setBusy(false)
     if (error) { setErr('No se pudo guardar'); return }
     setAdminUrl(url)
@@ -48,6 +56,7 @@ export default function ConfigTab({ userId, settings, onSaved }: {
   const inputCls = 'w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 outline-none focus:border-indigo-400'
 
   return (
+    <div className="space-y-4">
     <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3">
       <div>
         <label className="text-xs font-medium text-gray-500">Valor del alquiler mensual</label>
@@ -80,6 +89,19 @@ export default function ConfigTab({ userId, settings, onSaved }: {
         style={{ background: 'linear-gradient(135deg, #667eea, #764ba2)' }}>
         {busy ? 'Guardando…' : 'Guardar'}
       </button>
+    </div>
+
+    <div className="bg-white rounded-2xl shadow-sm p-4 space-y-1">
+      <p className="text-xs font-medium text-gray-500">👥 Compartido con</p>
+      {members.length === 0 ? (
+        <p className="text-sm text-gray-400">Solo vos</p>
+      ) : members.map(m => (
+        <p key={m.user_id} className="text-sm text-gray-700">
+          {m.user_email ?? 'Usuario'}{m.user_id === userId ? ' (vos)' : ''}
+        </p>
+      ))}
+      <p className="text-xs text-gray-400 pt-1">Todos los miembros ven y editan los mismos pagos, comprobantes y documentos.</p>
+    </div>
     </div>
   )
 }

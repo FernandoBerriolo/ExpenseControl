@@ -13,7 +13,7 @@ const SUGGESTIONS = [
   '¿Qué pagos me faltan este mes?',
 ]
 
-export default function AsistenteTab({ userId }: { userId: string }) {
+export default function AsistenteTab({ userId, homeId }: { userId: string; homeId: string }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -24,10 +24,10 @@ export default function AsistenteTab({ userId }: { userId: string }) {
 
   const loadDocs = useCallback(async () => {
     const { data } = await supabase.from('rental_documents').select('id, name, created_at')
-      .eq('user_id', userId).order('created_at')
+      .eq('home_id', homeId).order('created_at')
     setDocs((data ?? []) as RentalDocument[])
     setDocsLoaded(true)
-  }, [userId])
+  }, [homeId])
 
   useEffect(() => { loadDocs() }, [loadDocs])
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, loading])
@@ -130,12 +130,12 @@ export default function AsistenteTab({ userId }: { userId: string }) {
         className="w-full py-3 rounded-2xl text-sm font-semibold text-gray-600 bg-white shadow-sm">
         📄 Documentos del asistente ({docs.length}) {showDocs ? '▴' : '▾'}
       </button>
-      {showDocs && <DocumentsManager userId={userId} docs={docs} onChanged={loadDocs} />}
+      {showDocs && <DocumentsManager userId={userId} homeId={homeId} docs={docs} onChanged={loadDocs} />}
     </div>
   )
 }
 
-function DocumentsManager({ userId, docs, onChanged }: { userId: string; docs: RentalDocument[]; onChanged: () => void }) {
+function DocumentsManager({ userId, homeId, docs, onChanged }: { userId: string; homeId: string; docs: RentalDocument[]; onChanged: () => void }) {
   const [name, setName] = useState('')
   const [content, setContent] = useState('')
   const [busy, setBusy] = useState(false)
@@ -155,7 +155,7 @@ function DocumentsManager({ userId, docs, onChanged }: { userId: string; docs: R
     if (!name.trim() || !text) { setErr('Poné un nombre y el texto del documento'); return }
     if (text.length > MAX_DOC_CHARS) { setErr(`El documento es muy largo (máximo ${MAX_DOC_CHARS.toLocaleString('es-UY')} caracteres)`); return }
     setBusy(true); setErr('')
-    const { error } = await supabase.from('rental_documents').insert({ user_id: userId, name: name.trim(), content: text })
+    const { error } = await supabase.from('rental_documents').insert({ home_id: homeId, user_id: userId, name: name.trim(), content: text })
     setBusy(false)
     if (error) { setErr('No se pudo guardar el documento'); return }
     setName(''); setContent('')

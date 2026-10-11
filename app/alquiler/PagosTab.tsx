@@ -11,7 +11,7 @@ import ChargeCard from './ChargeCard'
 
 const KIND_ORDER = RENTAL_KINDS.map(k => k.value)
 
-export default function PagosTab({ userId, settings }: { userId: string; settings: RentalSettings | null }) {
+export default function PagosTab({ userId, homeId, settings }: { userId: string; homeId: string; settings: RentalSettings | null }) {
   const [month, setMonth] = useState(currentMonth())
   const [charges, setCharges] = useState<RentalCharge[]>([])
   const [receipts, setReceipts] = useState<Record<string, RentalReceipt[]>>({})
@@ -24,7 +24,7 @@ export default function PagosTab({ userId, settings }: { userId: string; setting
   const load = useCallback(async () => {
     const id = ++reqId.current
     const { data, error: err } = await supabase.from('rental_charges').select('*')
-      .eq('user_id', userId).eq('period', month).order('created_at')
+      .eq('home_id', homeId).eq('period', month).order('created_at')
     if (id !== reqId.current) return
     if (err) { setError('No se pudieron cargar los pagos'); setLoading(false); return }
 
@@ -42,7 +42,7 @@ export default function PagosTab({ userId, settings }: { userId: string; setting
     setCharges(list)
     setReceipts(grouped)
     setLoading(false)
-  }, [userId, month])
+  }, [homeId, month])
 
   useEffect(() => { setLoading(true); load() }, [load])
 
@@ -52,7 +52,7 @@ export default function PagosTab({ userId, settings }: { userId: string; setting
   async function addMonthlyItems() {
     setGenerating(true); setError('')
     const rows = missingMonthly.map(kind => ({
-      user_id: userId, kind, period: month,
+      home_id: homeId, user_id: userId, kind, period: month,
       currency: kind === 'alquiler' ? (settings?.rent_currency ?? 'UYU') : 'UYU',
       amount: kind === 'alquiler' ? (settings?.monthly_rent ?? null) : null,
     }))
@@ -114,6 +114,7 @@ export default function PagosTab({ userId, settings }: { userId: string; setting
               receipts={receipts[c.id] ?? []}
               settings={settings}
               userId={userId}
+              homeId={homeId}
               onChanged={load}
             />
           ))}
@@ -134,6 +135,7 @@ export default function PagosTab({ userId, settings }: { userId: string; setting
           {showAdd ? (
             <AddChargeForm
               userId={userId}
+              homeId={homeId}
               month={month}
               presentKinds={presentKinds}
               onDone={() => { setShowAdd(false); load() }}
@@ -151,8 +153,9 @@ export default function PagosTab({ userId, settings }: { userId: string; setting
   )
 }
 
-function AddChargeForm({ userId, month, presentKinds, onDone, onCancel }: {
+function AddChargeForm({ userId, homeId, month, presentKinds, onDone, onCancel }: {
   userId: string
+  homeId: string
   month: string
   presentKinds: Set<RentalKind>
   onDone: () => void
@@ -173,7 +176,7 @@ function AddChargeForm({ userId, month, presentKinds, onDone, onCancel }: {
     if (kind === 'otro' && !label.trim()) { setErr('Ingresá un nombre para el gasto'); return }
     setBusy(true); setErr('')
     const { error } = await supabase.from('rental_charges').insert({
-      user_id: userId, kind, period: month, currency, amount: parsed,
+      home_id: homeId, user_id: userId, kind, period: month, currency, amount: parsed,
       label: kind === 'otro' ? label.trim() : null,
     })
     setBusy(false)
