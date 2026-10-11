@@ -8,6 +8,7 @@ import {
 } from '@/lib/alquiler/types'
 import { currentMonth, formatMoney, monthLabel, parseAmount, shiftMonth } from '@/lib/alquiler/format'
 import ChargeCard from './ChargeCard'
+import { ChevronLeftIcon, ChevronRightIcon } from '@/app/components/Icons'
 
 const KIND_ORDER = RENTAL_KINDS.map(k => k.value)
 
@@ -81,28 +82,38 @@ export default function PagosTab({ userId, homeId, settings }: { userId: string;
   return (
     <div className="space-y-4">
       {/* Selector de mes */}
-      <div className="bg-white rounded-2xl shadow-sm p-4 flex items-center justify-between">
+      <div className="card p-3 flex items-center justify-between">
         <button onClick={() => setMonth(shiftMonth(month, -1))}
-          className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-600 text-xl">‹</button>
+          className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-2 text-ink-2" aria-label="Mes anterior">
+          <ChevronLeftIcon size={20} />
+        </button>
         <div className="text-center">
-          <p className="text-xs text-gray-400 uppercase tracking-wider font-medium">Período</p>
-          <p className="text-lg font-bold text-gray-800">{monthLabel(month)}</p>
+          <p className="text-[11px] text-muted uppercase tracking-wider font-medium">Período</p>
+          <p className="text-lg font-bold text-ink">{monthLabel(month)}</p>
         </div>
         <button onClick={() => setMonth(shiftMonth(month, 1))}
-          className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-600 text-xl">›</button>
+          className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-2 text-ink-2" aria-label="Mes siguiente">
+          <ChevronRightIcon size={20} />
+        </button>
       </div>
 
       {/* Resumen */}
       {charges.length > 0 && (
-        <div className="bg-white rounded-2xl shadow-sm p-4">
-          <p className="text-xs text-gray-400 uppercase tracking-wider font-medium">Resumen</p>
-          <p className="text-sm text-gray-800 mt-1">
-            <strong>{paidCount}</strong> de <strong>{charges.length}</strong> pagados
+        <div className="rounded-3xl p-5 text-white" style={{ background: 'var(--grad-hero)', boxShadow: 'var(--shadow-float)' }}>
+          <div className="flex items-baseline justify-between">
+            <p className="text-xs text-white/70 uppercase tracking-wider font-medium">Resumen</p>
+            <p className="text-sm text-white/90">
+              <strong>{paidCount}</strong> de <strong>{charges.length}</strong> pagados
+            </p>
+          </div>
+          <div className="h-2 rounded-full bg-white/20 mt-3 overflow-hidden">
+            <div className="h-full rounded-full bg-white transition-all" style={{ width: `${(paidCount / charges.length) * 100}%` }} />
+          </div>
+          <p className="num text-2xl font-bold mt-4">
+            {paidByCurrency.length > 0 ? paidByCurrency.map(([cur, n]) => formatMoney(n, cur)).join(' + ') : '$ 0'}
           </p>
-          <p className="text-sm font-semibold mt-1" style={{ color: '#15803d' }}>
-            Pagado: {paidByCurrency.length > 0 ? paidByCurrency.map(([cur, n]) => formatMoney(n, cur)).join(' + ') : '$ 0'}
-          </p>
-          <p className="text-xs text-gray-500 mt-0.5">
+          <p className="text-xs text-white/70">Pagado este mes</p>
+          <p className="num text-sm text-white/90 mt-2">
             {pendingByCurrency.length > 0
               ? `Pendiente: ${pendingByCurrency.map(([cur, n]) => formatMoney(n, cur)).join(' + ')}`
               : paidCount === charges.length ? 'Todo al día 🎉' : 'Pendiente: faltan cargar montos'}
@@ -110,10 +121,10 @@ export default function PagosTab({ userId, homeId, settings }: { userId: string;
         </div>
       )}
 
-      {error && <p className="text-sm text-red-500 text-center">{error}</p>}
+      {error && <p className="text-sm text-danger text-center">{error}</p>}
 
       {loading ? (
-        <p className="text-center text-sm text-gray-400 py-8">Cargando…</p>
+        <p className="text-center text-sm text-muted-2 py-8">Cargando…</p>
       ) : (
         <>
           {charges.map(c => (
@@ -133,7 +144,7 @@ export default function PagosTab({ userId, homeId, settings }: { userId: string;
               onClick={addMonthlyItems}
               disabled={generating}
               className="w-full py-3 rounded-2xl text-sm font-semibold"
-              style={{ background: '#e8edff', color: '#667eea' }}
+              style={{ background: 'var(--primary-soft)', color: 'var(--primary)' }}
             >
               {generating ? 'Agregando…' : charges.length === 0
                 ? `Armar ${monthLabel(month)} (alquiler, gastos comunes, luz, wifi y garantía)`
@@ -152,7 +163,7 @@ export default function PagosTab({ userId, homeId, settings }: { userId: string;
             />
           ) : (
             <button onClick={() => setShowAdd(true)}
-              className="w-full py-3 rounded-2xl text-sm font-semibold text-gray-500 bg-white shadow-sm">
+              className="w-full py-3 rounded-2xl text-sm font-semibold text-muted card">
               + Agregar gasto (impuesto, comida, suscripciones…)
             </button>
           )}
@@ -196,11 +207,11 @@ function AddChargeForm({ userId, homeId, month, presentKinds, onDone, onCancel }
     onDone()
   }
 
-  const inputCls = 'w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 outline-none focus:border-indigo-400'
+  const inputCls = 'w-full px-3 py-2 rounded-xl border border-line bg-surface text-sm text-ink placeholder-muted-2 outline-none focus:border-primary'
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm p-4 space-y-2">
-      <p className="font-semibold text-gray-800 text-sm">Nuevo gasto en {monthLabel(month)}</p>
+    <div className="card p-4 space-y-2">
+      <p className="font-semibold text-ink text-sm">Nuevo gasto en {monthLabel(month)}</p>
       <select className={inputCls} value={kind} onChange={e => setKind(e.target.value as RentalKind)}>
         {fixedOptions.length > 0 && (
           <optgroup label="Rubros">
@@ -222,14 +233,14 @@ function AddChargeForm({ userId, homeId, month, presentKinds, onDone, onCancel }
           <option value="EUR">EUR</option>
         </select>
       </div>
-      {err && <p className="text-xs text-red-500">{err}</p>}
+      {err && <p className="text-xs text-danger">{err}</p>}
       <div className="flex gap-2">
         <button onClick={save} disabled={busy}
           className="flex-1 py-2 rounded-xl text-sm font-semibold text-white"
-          style={{ background: 'linear-gradient(135deg, #667eea, #764ba2)' }}>
+          style={{ background: 'var(--grad)' }}>
           {busy ? 'Guardando…' : 'Agregar'}
         </button>
-        <button onClick={onCancel} className="px-4 py-2 rounded-xl text-sm text-gray-500 bg-gray-100">Cancelar</button>
+        <button onClick={onCancel} className="px-4 py-2 rounded-xl text-sm text-muted bg-surface-2">Cancelar</button>
       </div>
     </div>
   )

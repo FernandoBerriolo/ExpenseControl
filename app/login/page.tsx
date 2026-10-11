@@ -28,7 +28,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: 'var(--grad-hero)' }}>
       <div className="w-full max-w-sm">
         {/* Logo / Title */}
         <div className="text-center mb-8">
@@ -40,36 +40,36 @@ export default function LoginPage() {
         </div>
 
         {/* Card */}
-        <div className="bg-white rounded-3xl shadow-2xl p-8">
-          <h2 className="text-xl font-semibold text-gray-800 mb-6">Bienvenida de nuevo</h2>
+        <div className="bg-surface rounded-3xl shadow-2xl p-8">
+          <h2 className="text-xl font-semibold text-ink mb-6">Bienvenida de nuevo</h2>
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1.5">Email</label>
+              <label className="block text-sm font-medium text-ink-2 mb-1.5">Email</label>
               <input
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required
                 placeholder="tu@email.com"
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:border-transparent text-gray-800 placeholder-gray-400 transition-all"
+                className="field text-ink placeholder-muted-2 transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1.5">Contraseña</label>
+              <label className="block text-sm font-medium text-ink-2 mb-1.5">Contraseña</label>
               <input
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 required
                 placeholder="••••••••"
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:border-transparent text-gray-800 placeholder-gray-400 transition-all"
+                className="field text-ink placeholder-muted-2 transition-all"
               />
             </div>
 
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl">
+              <div className="bg-danger-soft border border-danger/30 text-danger text-sm px-4 py-3 rounded-xl">
                 {error}
               </div>
             )}
@@ -78,7 +78,7 @@ export default function LoginPage() {
               type="submit"
               disabled={loading}
               className="w-full py-3 rounded-xl font-semibold text-white transition-all active:scale-95 disabled:opacity-70 mt-2"
-              style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
+              style={{ background: 'var(--grad)' }}
             >
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
@@ -89,9 +89,9 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="text-center text-sm text-gray-500 mt-6">
+          <p className="text-center text-sm text-muted mt-6">
             ¿No tenés cuenta?{' '}
-            <Link href="/register" className="font-semibold" style={{ color: '#667eea' }}>
+            <Link href="/register" className="font-semibold" style={{ color: 'var(--primary)' }}>
               Registrate
             </Link>
           </p>

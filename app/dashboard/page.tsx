@@ -5,6 +5,11 @@ import { useRouter } from 'next/navigation'
 import { supabase, type Expense, type Income, type SharedAccess, type Account, type UserSettings, type PaymentMethod, CATEGORIES } from '@/lib/supabase'
 import ChatWidget from '@/app/components/ChatWidget'
 import OnboardingSetup from '@/app/components/OnboardingSetup'
+import BottomNav from '@/app/components/BottomNav'
+import {
+  BriefcaseIcon, CalendarIcon, CardIcon, CashIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon,
+  CloseIcon, EditIcon, LinkIcon, LogoutIcon, PiggyIcon, PlusIcon, TrashIcon, UsersIcon, WalletIcon,
+} from '@/app/components/Icons'
 
 const MONTHS = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -104,6 +109,17 @@ function generateCode() {
 function getCategoryInfo(value: string | null | undefined) {
   if (!value) return null
   return CATEGORIES.find(c => c.value === value) ?? null
+}
+
+// Color por categoría (según su posición en CATEGORIES) para tarjetas y barra de distribución
+const CATEGORY_PALETTE = [
+  '#f97316', '#8b5cf6', '#eab308', '#14b8a6', '#0ea5e9', '#ef4444', '#ec4899', '#6366f1',
+  '#06b6d4', '#84cc16', '#f59e0b', '#3b82f6', '#d946ef', '#64748b', '#f43f5e', '#94a3b8',
+]
+
+function categoryColor(value: string) {
+  const idx = CATEGORIES.findIndex(c => c.value === value)
+  return idx >= 0 ? CATEGORY_PALETTE[idx % CATEGORY_PALETTE.length] : 'var(--muted-2)'
 }
 
 type ModalMode = 'add' | 'edit' | null
@@ -608,162 +624,214 @@ export default function Dashboard() {
   const dateMin = `${selectedMonth}-01`
   const dateMax = lastDayOfMonth(selectedMonth)
 
+  const totalsList = ([['UYU', totalUYU], ['USD', totalUSD], ['EUR', totalEUR]] as const).filter(([, v]) => v > 0)
+  const [mainTotal, ...otherTotals] = totalsList
+
+  const iconBtn = 'w-10 h-10 flex items-center justify-center rounded-full text-muted hover:bg-surface-2 transition-colors'
+
   return (
-    <div className="min-h-screen" style={{ background: '#f0f2ff' }}>
+    <div className="min-h-screen pb-32" style={{ background: 'var(--bg)' }}>
       {/* Header */}
-      <div className="sticky top-0 z-10 shadow-sm" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
-        <div className="max-w-lg mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">💸</span>
-            <span className="text-white font-bold text-lg">Mis Gastos</span>
+      <header className="sticky top-0 z-20 border-b border-line"
+        style={{ background: 'color-mix(in srgb, var(--bg) 88%, transparent)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)' }}>
+        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white flex-shrink-0" style={{ background: 'var(--grad)' }}>
+              <WalletIcon size={19} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] text-muted leading-none">Mis Gastos</p>
+              <p className="text-base font-bold text-ink leading-tight truncate capitalize">
+                {myEmail ? `${myEmail.split('@')[0]} 👋` : '…'}
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            {myEmail && (
-              <span className="text-white/90 text-sm font-medium capitalize">
-                {myEmail.split('@')[0]} 👋
-              </span>
-            )}
-            <button
-              onClick={() => router.push('/alquiler')}
-              className="w-9 h-9 flex items-center justify-center rounded-xl text-lg"
-              style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}
-              title="Mi apartamento"
-            >
-              🏠
-            </button>
-            <button
-              onClick={() => router.push('/shared')}
-              className="w-9 h-9 flex items-center justify-center rounded-xl text-lg"
-              style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}
-              title="Gastos compartidos"
-            >
-              👥
-            </button>
+          <div className="flex items-center">
             <button
               onClick={() => { setShowShare(true); setJoinError(''); setJoinSuccess(''); setJoinCode('') }}
-              className="w-9 h-9 flex items-center justify-center rounded-xl text-lg"
-              style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}
+              className={iconBtn} title="Compartir cuenta" aria-label="Compartir cuenta"
             >
-              🔗
+              <LinkIcon size={20} />
             </button>
-            <button onClick={handleLogout} className="text-white/70 hover:text-white text-sm px-1">
-              Salir
+            <button onClick={handleLogout} className={iconBtn} title="Salir" aria-label="Salir">
+              <LogoutIcon size={20} />
             </button>
           </div>
         </div>
 
         {accounts.length > 1 && (
           <div className="max-w-lg mx-auto px-4 pb-3 flex gap-2 overflow-x-auto">
-            {accounts.map(acc => (
-              <button
-                key={acc.user_id}
-                onClick={() => setActiveAccount(acc)}
-                className="flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
-                style={activeAccount?.user_id === acc.user_id
-                  ? { background: 'white', color: '#667eea' }
-                  : { background: 'rgba(255,255,255,0.2)', color: 'white' }}
-              >
-                {acc.isOwn ? '👤 Mis gastos' : `👥 ${acc.email.split('@')[0]}`}
-              </button>
-            ))}
+            {accounts.map(acc => {
+              const active = activeAccount?.user_id === acc.user_id
+              return (
+                <button
+                  key={acc.user_id}
+                  onClick={() => setActiveAccount(acc)}
+                  className="flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all border"
+                  style={active
+                    ? { background: 'var(--primary-soft)', color: 'var(--primary)', borderColor: 'var(--primary)' }
+                    : { background: 'var(--surface)', color: 'var(--muted)', borderColor: 'var(--line)' }}
+                >
+                  {acc.isOwn ? '👤 Mis gastos' : `👥 ${acc.email.split('@')[0]}`}
+                </button>
+              )
+            })}
           </div>
         )}
-      </div>
+      </header>
 
-      <div className="max-w-lg mx-auto px-4 py-6 space-y-4">
+      <main className="max-w-lg mx-auto px-4 pt-4 space-y-4">
         {viewingShared && (
           <div className="rounded-2xl px-4 py-3 text-sm font-medium flex items-center gap-2"
-            style={{ background: '#e8edff', color: '#667eea' }}>
-            <span>👥</span> Estás viendo los gastos de <strong>{activeAccount?.email}</strong>
+            style={{ background: 'var(--primary-soft)', color: 'var(--primary)' }}>
+            <UsersIcon size={18} /> <span>Estás viendo los gastos de <strong>{activeAccount?.email}</strong></span>
           </div>
         )}
 
-        {/* Month Selector */}
-        <div className="bg-white rounded-2xl shadow-sm p-4 flex items-center justify-between">
-          <button onClick={() => setSelectedMonth(prevMonth(selectedMonth))}
-            className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-600 text-xl">‹</button>
-          <div className="text-center">
-            <p className="text-xs text-gray-400 uppercase tracking-wider font-medium">Período</p>
-            <p className="text-lg font-bold text-gray-800">{monthLabel(selectedMonth)}</p>
+        {/* Resumen del mes */}
+        <section className="rounded-3xl p-5 text-white" style={{ background: 'var(--grad-hero)', boxShadow: 'var(--shadow-float)' }}>
+          <div className="flex items-center justify-between">
+            <button onClick={() => setSelectedMonth(prevMonth(selectedMonth))}
+              className="w-9 h-9 flex items-center justify-center rounded-full bg-white/15 hover:bg-white/25 transition-colors"
+              aria-label="Mes anterior">
+              <ChevronLeftIcon size={20} />
+            </button>
+            <div className="text-center">
+              <p className="text-[11px] uppercase tracking-wider text-white/70 font-medium">Período</p>
+              <p className="text-base font-bold">{monthLabel(selectedMonth)}</p>
+            </div>
+            <button onClick={() => setSelectedMonth(nextMonth(selectedMonth))}
+              className="w-9 h-9 flex items-center justify-center rounded-full bg-white/15 hover:bg-white/25 transition-colors"
+              aria-label="Mes siguiente">
+              <ChevronRightIcon size={20} />
+            </button>
           </div>
-          <button onClick={() => setSelectedMonth(nextMonth(selectedMonth))}
-            className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-600 text-xl">›</button>
-        </div>
 
-        {/* Income & Savings Section */}
-        <div className="bg-white rounded-2xl shadow-sm p-4 space-y-4">
+          <div className="mt-6">
+            <p className="text-xs text-white/70 font-medium">Gastos del mes</p>
+            <p className="num text-[2.1rem] leading-tight font-bold mt-1">
+              {mainTotal ? formatMoney(mainTotal[1], mainTotal[0]) : '$ 0,00'}
+            </p>
+            {otherTotals.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-3">
+                {otherTotals.map(([cur, val]) => (
+                  <span key={cur} className="num px-3 py-1 rounded-full bg-white/15 text-sm font-semibold">
+                    {formatMoney(val, cur)}
+                  </span>
+                ))}
+              </div>
+            )}
+            {expenses.length > 0 && (
+              <p className="text-xs text-white/70 mt-3">
+                {expenses.length} gasto{expenses.length !== 1 ? 's' : ''} registrado{expenses.length !== 1 ? 's' : ''}
+              </p>
+            )}
+          </div>
+        </section>
+
+        {/* Debes a Fer — solo para usuarios legacy */}
+        {isLegacy && (owedTotalUYU > 0 || owedTotalUSD > 0) && (
+          <div className="rounded-2xl p-4 border" style={{ background: 'var(--owed-soft)', borderColor: 'var(--warn-line)' }}>
+            <p className="text-sm font-semibold mb-1.5" style={{ color: 'var(--owed)' }}>💸 Debés a Fer este mes</p>
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              {owedTotalUYU > 0 && (
+                <p className="num text-lg font-bold" style={{ color: 'var(--owed)' }}>{formatMoney(owedTotalUYU, 'UYU')}</p>
+              )}
+              {owedTotalUSD > 0 && (
+                <p className="num text-lg font-bold" style={{ color: 'var(--owed)' }}>{formatMoney(owedTotalUSD, 'USD')}</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Ingresos y ahorros */}
+        <section className="card p-4 space-y-4">
           {/* Ingresos */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-gray-700">💼 Ingresos del mes</p>
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center gap-2.5">
+                <span className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'var(--income-soft)', color: 'var(--income)' }}>
+                  <BriefcaseIcon size={17} />
+                </span>
+                <p className="text-sm font-semibold text-ink">Ingresos del mes</p>
+              </div>
               {!viewingShared && (
                 <button
                   onClick={() => { setIncomeModalType('income'); setIncomeDesc('Sueldo'); setIncomeAmount(''); setIncomeCurrency('UYU'); setShowIncomeModal(true); setIncomeError('') }}
-                  className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-lg font-bold"
-                  style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}
-                >+</button>
+                  className="w-8 h-8 rounded-full flex items-center justify-center transition-transform active:scale-90"
+                  style={{ background: 'var(--income-soft)', color: 'var(--income)' }}
+                  aria-label="Agregar ingreso"
+                ><PlusIcon size={18} /></button>
               )}
             </div>
             {incomes.length === 0 ? (
-              <p className="text-sm text-gray-400">Sin ingresos registrados este mes</p>
+              <p className="text-sm text-muted-2">Sin ingresos registrados este mes</p>
             ) : (
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 {incomes.map(income => (
                   <div key={income.id} className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-gray-700">{income.description}</p>
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold text-green-600">{formatMoney(income.amount, income.currency)}</p>
+                    <p className="text-sm font-medium text-ink-2">{income.description}</p>
+                    <div className="flex items-center gap-1">
+                      <p className="num text-sm font-bold text-income">{formatMoney(income.amount, income.currency)}</p>
                       {!viewingShared && (
                         <button onClick={() => setDeleteIncomeConfirm(income.id)}
-                          className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-sm">🗑️</button>
+                          className="w-8 h-8 flex items-center justify-center rounded-full text-muted-2 hover:text-danger hover:bg-danger-soft"
+                          aria-label="Eliminar ingreso"><TrashIcon size={16} /></button>
                       )}
                     </div>
                   </div>
                 ))}
                 {(incomeTotalUYU > 0 || incomeTotalUSD > 0) && incomes.length > 1 && (
-                  <div className="pt-1 border-t border-gray-100 flex gap-3">
-                    {incomeTotalUYU > 0 && <p className="text-xs font-bold text-green-700">Total: {formatMoney(incomeTotalUYU, 'UYU')}</p>}
-                    {incomeTotalUSD > 0 && <p className="text-xs font-bold text-green-700">Total: {formatMoney(incomeTotalUSD, 'USD')}</p>}
+                  <div className="pt-2 mt-1 border-t border-line flex gap-4">
+                    {incomeTotalUYU > 0 && <p className="num text-xs font-bold text-income">Total: {formatMoney(incomeTotalUYU, 'UYU')}</p>}
+                    {incomeTotalUSD > 0 && <p className="num text-xs font-bold text-income">Total: {formatMoney(incomeTotalUSD, 'USD')}</p>}
                   </div>
                 )}
               </div>
             )}
           </div>
 
-          <div className="border-t border-gray-100" />
+          <div className="border-t border-line" />
 
           {/* Ahorros */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-gray-700">🏦 Ahorros del mes</p>
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center gap-2.5">
+                <span className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'var(--savings-soft)', color: 'var(--savings)' }}>
+                  <PiggyIcon size={17} />
+                </span>
+                <p className="text-sm font-semibold text-ink">Ahorros del mes</p>
+              </div>
               {!viewingShared && (
                 <button
                   onClick={() => { setIncomeModalType('savings'); setIncomeDesc('Ahorro'); setIncomeAmount(''); setIncomeCurrency('UYU'); setShowIncomeModal(true); setIncomeError('') }}
-                  className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-lg font-bold"
-                  style={{ background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)' }}
-                >+</button>
+                  className="w-8 h-8 rounded-full flex items-center justify-center transition-transform active:scale-90"
+                  style={{ background: 'var(--savings-soft)', color: 'var(--savings)' }}
+                  aria-label="Agregar ahorro"
+                ><PlusIcon size={18} /></button>
               )}
             </div>
             {savings.length === 0 ? (
-              <p className="text-sm text-gray-400">Sin ahorros registrados este mes</p>
+              <p className="text-sm text-muted-2">Sin ahorros registrados este mes</p>
             ) : (
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 {savings.map(s => (
                   <div key={s.id} className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-gray-700">{s.description}</p>
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold text-blue-600">{formatMoney(s.amount, s.currency)}</p>
+                    <p className="text-sm font-medium text-ink-2">{s.description}</p>
+                    <div className="flex items-center gap-1">
+                      <p className="num text-sm font-bold text-savings">{formatMoney(s.amount, s.currency)}</p>
                       {!viewingShared && (
                         <button onClick={() => setDeleteIncomeConfirm(s.id)}
-                          className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-sm">🗑️</button>
+                          className="w-8 h-8 flex items-center justify-center rounded-full text-muted-2 hover:text-danger hover:bg-danger-soft"
+                          aria-label="Eliminar ahorro"><TrashIcon size={16} /></button>
                       )}
                     </div>
                   </div>
                 ))}
                 {(savingsTotalUYU > 0 || savingsTotalUSD > 0) && savings.length > 1 && (
-                  <div className="pt-1 border-t border-gray-100 flex gap-3">
-                    {savingsTotalUYU > 0 && <p className="text-xs font-bold text-blue-700">Total: {formatMoney(savingsTotalUYU, 'UYU')}</p>}
-                    {savingsTotalUSD > 0 && <p className="text-xs font-bold text-blue-700">Total: {formatMoney(savingsTotalUSD, 'USD')}</p>}
+                  <div className="pt-2 mt-1 border-t border-line flex gap-4">
+                    {savingsTotalUYU > 0 && <p className="num text-xs font-bold text-savings">Total: {formatMoney(savingsTotalUYU, 'UYU')}</p>}
+                    {savingsTotalUSD > 0 && <p className="num text-xs font-bold text-savings">Total: {formatMoney(savingsTotalUSD, 'USD')}</p>}
                   </div>
                 )}
               </div>
@@ -772,158 +840,118 @@ export default function Dashboard() {
 
           {/* Balance disponible */}
           {(incomeTotalUYU > 0 || incomeTotalUSD > 0) && (cashExpensesUYU > 0 || cashExpensesUSD > 0 || savingsTotalUYU > 0 || savingsTotalUSD > 0) && (
-            <>
-              <div className="border-t border-gray-100" />
-              <div>
-                <p className="text-sm font-semibold text-gray-700 mb-2">💰 Balance disponible</p>
-                <div className="space-y-1.5">
-                  {incomeTotalUYU > 0 && (
-                    <>
-                      <div className="flex items-center justify-between text-xs text-gray-500">
-                        <span>Ingresos</span>
-                        <span className="font-medium text-green-600">{formatMoney(incomeTotalUYU, 'UYU')}</span>
+            <div className="rounded-2xl p-3.5 bg-surface-2">
+              <p className="text-sm font-semibold text-ink mb-2.5">💰 Balance disponible</p>
+              <div className="space-y-1.5">
+                {incomeTotalUYU > 0 && (
+                  <>
+                    <div className="flex items-center justify-between text-xs text-muted">
+                      <span>Ingresos</span>
+                      <span className="num font-semibold text-income">{formatMoney(incomeTotalUYU, 'UYU')}</span>
+                    </div>
+                    {cashExpensesUYU > 0 && (
+                      <div className="flex items-center justify-between text-xs text-muted">
+                        <span>— Efectivo y débito</span>
+                        <span className="num font-semibold text-danger">−{formatMoney(cashExpensesUYU, 'UYU')}</span>
                       </div>
-                      {cashExpensesUYU > 0 && (
-                        <div className="flex items-center justify-between text-xs text-gray-500">
-                          <span>— Efectivo y débito</span>
-                          <span className="font-medium text-red-500">−{formatMoney(cashExpensesUYU, 'UYU')}</span>
-                        </div>
-                      )}
-                      {savingsTotalUYU > 0 && (
-                        <div className="flex items-center justify-between text-xs text-gray-500">
-                          <span>— Ahorros</span>
-                          <span className="font-medium text-blue-500">−{formatMoney(savingsTotalUYU, 'UYU')}</span>
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between pt-1 border-t border-gray-100">
-                        <span className="text-sm font-semibold text-gray-700">Disponible</span>
-                        <span className="text-sm font-bold" style={{ color: incomeTotalUYU - cashExpensesUYU - savingsTotalUYU >= 0 ? '#16a34a' : '#dc2626' }}>
-                          {formatMoney(incomeTotalUYU - cashExpensesUYU - savingsTotalUYU, 'UYU')}
-                        </span>
+                    )}
+                    {savingsTotalUYU > 0 && (
+                      <div className="flex items-center justify-between text-xs text-muted">
+                        <span>— Ahorros</span>
+                        <span className="num font-semibold text-savings">−{formatMoney(savingsTotalUYU, 'UYU')}</span>
                       </div>
-                    </>
-                  )}
-                  {incomeTotalUSD > 0 && (
-                    <>
-                      {incomeTotalUYU > 0 && <div className="pt-1" />}
-                      <div className="flex items-center justify-between text-xs text-gray-500">
-                        <span>Ingresos USD</span>
-                        <span className="font-medium text-green-600">{formatMoney(incomeTotalUSD, 'USD')}</span>
+                    )}
+                    <div className="flex items-center justify-between pt-2 border-t border-line">
+                      <span className="text-sm font-semibold text-ink">Disponible</span>
+                      <span className="num text-base font-bold" style={{ color: incomeTotalUYU - cashExpensesUYU - savingsTotalUYU >= 0 ? 'var(--income)' : 'var(--danger)' }}>
+                        {formatMoney(incomeTotalUYU - cashExpensesUYU - savingsTotalUYU, 'UYU')}
+                      </span>
+                    </div>
+                  </>
+                )}
+                {incomeTotalUSD > 0 && (
+                  <>
+                    {incomeTotalUYU > 0 && <div className="pt-1.5" />}
+                    <div className="flex items-center justify-between text-xs text-muted">
+                      <span>Ingresos USD</span>
+                      <span className="num font-semibold text-income">{formatMoney(incomeTotalUSD, 'USD')}</span>
+                    </div>
+                    {cashExpensesUSD > 0 && (
+                      <div className="flex items-center justify-between text-xs text-muted">
+                        <span>— Efectivo y débito USD</span>
+                        <span className="num font-semibold text-danger">−{formatMoney(cashExpensesUSD, 'USD')}</span>
                       </div>
-                      {cashExpensesUSD > 0 && (
-                        <div className="flex items-center justify-between text-xs text-gray-500">
-                          <span>— Efectivo y débito USD</span>
-                          <span className="font-medium text-red-500">−{formatMoney(cashExpensesUSD, 'USD')}</span>
-                        </div>
-                      )}
-                      {savingsTotalUSD > 0 && (
-                        <div className="flex items-center justify-between text-xs text-gray-500">
-                          <span>— Ahorros USD</span>
-                          <span className="font-medium text-blue-500">−{formatMoney(savingsTotalUSD, 'USD')}</span>
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between pt-1 border-t border-gray-100">
-                        <span className="text-sm font-semibold text-gray-700">Disponible USD</span>
-                        <span className="text-sm font-bold" style={{ color: incomeTotalUSD - cashExpensesUSD - savingsTotalUSD >= 0 ? '#16a34a' : '#dc2626' }}>
-                          {formatMoney(incomeTotalUSD - cashExpensesUSD - savingsTotalUSD, 'USD')}
-                        </span>
+                    )}
+                    {savingsTotalUSD > 0 && (
+                      <div className="flex items-center justify-between text-xs text-muted">
+                        <span>— Ahorros USD</span>
+                        <span className="num font-semibold text-savings">−{formatMoney(savingsTotalUSD, 'USD')}</span>
                       </div>
-                    </>
-                  )}
-                </div>
+                    )}
+                    <div className="flex items-center justify-between pt-2 border-t border-line">
+                      <span className="text-sm font-semibold text-ink">Disponible USD</span>
+                      <span className="num text-base font-bold" style={{ color: incomeTotalUSD - cashExpensesUSD - savingsTotalUSD >= 0 ? 'var(--income)' : 'var(--danger)' }}>
+                        {formatMoney(incomeTotalUSD - cashExpensesUSD - savingsTotalUSD, 'USD')}
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
-            </>
-          )}
-        </div>
-
-        {/* Totals */}
-        {expenses.length > 0 && (
-          <div className={`grid gap-3 ${[totalUYU, totalUSD, totalEUR].filter(v => v > 0).length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-            {totalUYU > 0 && (
-              <div className="bg-white rounded-2xl shadow-sm p-4">
-                <p className="text-xs text-gray-400 font-medium mb-1">Total en Pesos</p>
-                <p className="text-xl font-bold" style={{ color: '#667eea' }}>
-                  $ {totalUYU.toLocaleString('es-UY', { minimumFractionDigits: 2 })}
-                </p>
-              </div>
-            )}
-            {totalUSD > 0 && (
-              <div className="bg-white rounded-2xl shadow-sm p-4">
-                <p className="text-xs text-gray-400 font-medium mb-1">Total en Dólares</p>
-                <p className="text-xl font-bold" style={{ color: '#764ba2' }}>
-                  USD {totalUSD.toLocaleString('es-UY', { minimumFractionDigits: 2 })}
-                </p>
-              </div>
-            )}
-            {totalEUR > 0 && (
-              <div className="bg-white rounded-2xl shadow-sm p-4">
-                <p className="text-xs text-gray-400 font-medium mb-1">Total en Euros</p>
-                <p className="text-xl font-bold" style={{ color: '#0ea5e9' }}>
-                  EUR {totalEUR.toLocaleString('es-UY', { minimumFractionDigits: 2 })}
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Debes a Fer — solo para usuarios legacy */}
-        {isLegacy && (owedTotalUYU > 0 || owedTotalUSD > 0) && (
-          <div className="rounded-2xl p-4" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
-            <p className="text-sm font-semibold mb-2" style={{ color: '#c2410c' }}>💸 Debés a Fer este mes</p>
-            <div className="flex flex-wrap gap-3">
-              {owedTotalUYU > 0 && (
-                <p className="text-lg font-bold" style={{ color: '#ea580c' }}>{formatMoney(owedTotalUYU, 'UYU')}</p>
-              )}
-              {owedTotalUSD > 0 && (
-                <p className="text-lg font-bold" style={{ color: '#9a3412' }}>{formatMoney(owedTotalUSD, 'USD')}</p>
-              )}
             </div>
-          </div>
-        )}
+          )}
+        </section>
 
-        {/* Card / Cash Breakdown */}
+        {/* Gastos por tarjeta */}
         {expenses.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <section className="card overflow-hidden">
             <button
               className="w-full px-4 py-3.5 flex items-center justify-between"
               onClick={() => setShowCardBreakdown(!showCardBreakdown)}
+              aria-expanded={showCardBreakdown}
             >
-              <span className="text-sm font-semibold text-gray-700">💳 Gastos por tarjeta</span>
-              <span className="text-gray-400 text-lg">{showCardBreakdown ? '▲' : '▼'}</span>
+              <span className="flex items-center gap-2.5">
+                <span className="w-8 h-8 rounded-xl flex items-center justify-center bg-surface-2 text-ink-2"><CardIcon size={17} /></span>
+                <span className="text-sm font-semibold text-ink">Gastos por tarjeta</span>
+              </span>
+              <ChevronDownIcon size={20} className={`text-muted-2 transition-transform ${showCardBreakdown ? 'rotate-180' : ''}`} />
             </button>
             {showCardBreakdown && (
-              <div className="px-4 pb-4 space-y-2.5">
+              <div className="px-4 pb-3">
                 {bankBreakdown.map(([key, v]) => (
-                  <div key={key} className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-base">{key === '__cash__' ? '💵' : '💳'}</span>
-                      <span className="text-sm font-medium text-gray-700">{key === '__cash__' ? 'Efectivo / Débito' : key}</span>
+                  <div key={key} className="flex items-center justify-between py-2.5 border-t border-line">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-muted">{key === '__cash__' ? <CashIcon size={18} /> : <CardIcon size={18} />}</span>
+                      <span className="text-sm font-medium text-ink-2">{key === '__cash__' ? 'Efectivo / Débito' : key}</span>
                     </div>
                     <div className="text-right">
-                      {v.uyu > 0 && <p className="text-sm font-bold" style={{ color: '#667eea' }}>{formatMoney(v.uyu, 'UYU')}</p>}
-                      {v.usd > 0 && <p className="text-sm font-bold" style={{ color: '#764ba2' }}>{formatMoney(v.usd, 'USD')}</p>}
+                      {v.uyu > 0 && <p className="num text-sm font-bold text-ink">{formatMoney(v.uyu, 'UYU')}</p>}
+                      {v.usd > 0 && <p className="num text-sm font-bold" style={{ color: 'var(--accent)' }}>{formatMoney(v.usd, 'USD')}</p>}
                     </div>
                   </div>
                 ))}
               </div>
             )}
-          </div>
+          </section>
         )}
 
         {/* Historial mensual */}
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+        <section className="card overflow-hidden">
           <button
             className="w-full px-4 py-3.5 flex items-center justify-between"
             onClick={() => setShowHistory(!showHistory)}
+            aria-expanded={showHistory}
           >
-            <span className="text-sm font-semibold text-gray-700">📅 Historial por mes</span>
-            <span className="text-gray-400 text-lg">{showHistory ? '▲' : '▼'}</span>
+            <span className="flex items-center gap-2.5">
+              <span className="w-8 h-8 rounded-xl flex items-center justify-center bg-surface-2 text-ink-2"><CalendarIcon size={17} /></span>
+              <span className="text-sm font-semibold text-ink">Historial por mes</span>
+            </span>
+            <ChevronDownIcon size={20} className={`text-muted-2 transition-transform ${showHistory ? 'rotate-180' : ''}`} />
           </button>
 
           {showHistory && (
             <div className="px-4 pb-4">
               {monthlyHistory.length === 0 ? (
-                <p className="text-sm text-gray-400 py-2">Sin datos</p>
+                <p className="text-sm text-muted-2 py-2">Sin datos</p>
               ) : (
                 <div className="space-y-2">
                   {[...monthlyHistory].reverse().map(m => {
@@ -933,41 +961,41 @@ export default function Dashboard() {
                     return (
                       <button
                         key={m.month}
-                        className="w-full text-left rounded-xl px-3 py-3 transition-all"
+                        className="w-full text-left rounded-2xl px-3.5 py-3 transition-all"
                         style={isSelected
-                          ? { background: '#e8edff', border: '1.5px solid #667eea' }
-                          : { background: '#f9fafb', border: '1.5px solid transparent' }}
+                          ? { background: 'var(--primary-soft)', border: '1.5px solid var(--primary)' }
+                          : { background: 'var(--surface-2)', border: '1.5px solid transparent' }}
                         onClick={() => setSelectedMonth(m.month)}
                       >
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-semibold" style={{ color: isSelected ? '#667eea' : '#374151' }}>
+                          <span className="text-sm font-semibold" style={{ color: isSelected ? 'var(--primary)' : 'var(--ink-2)' }}>
                             {monthLabel(m.month)}{isSelected ? ' ◀' : ''}
                           </span>
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-xs">
                           <div>
-                            <p className="text-gray-400 mb-0.5">Gastos</p>
-                            {m.uyu > 0 && <p className="font-bold" style={{ color: '#ef4444' }}>$ {m.uyu.toLocaleString('es-UY', { maximumFractionDigits: 0 })}</p>}
-                            {m.usd > 0 && <p className="font-bold" style={{ color: '#9f1239' }}>USD {m.usd.toLocaleString('es-UY', { maximumFractionDigits: 0 })}</p>}
-                            {m.uyu === 0 && m.usd === 0 && <p className="text-gray-300">—</p>}
+                            <p className="text-muted mb-0.5">Gastos</p>
+                            {m.uyu > 0 && <p className="num font-bold text-danger">$ {m.uyu.toLocaleString('es-UY', { maximumFractionDigits: 0 })}</p>}
+                            {m.usd > 0 && <p className="num font-bold text-danger">USD {m.usd.toLocaleString('es-UY', { maximumFractionDigits: 0 })}</p>}
+                            {m.uyu === 0 && m.usd === 0 && <p className="text-muted-2">—</p>}
                           </div>
                           <div>
-                            <p className="text-gray-400 mb-0.5">Ingresos</p>
+                            <p className="text-muted mb-0.5">Ingresos</p>
                             {hasIncome ? (
                               <>
-                                {m.incomeUYU > 0 && <p className="font-bold text-green-600">$ {m.incomeUYU.toLocaleString('es-UY', { maximumFractionDigits: 0 })}</p>}
-                                {m.incomeUSD > 0 && <p className="font-bold text-green-700">USD {m.incomeUSD.toLocaleString('es-UY', { maximumFractionDigits: 0 })}</p>}
+                                {m.incomeUYU > 0 && <p className="num font-bold text-income">$ {m.incomeUYU.toLocaleString('es-UY', { maximumFractionDigits: 0 })}</p>}
+                                {m.incomeUSD > 0 && <p className="num font-bold text-income">USD {m.incomeUSD.toLocaleString('es-UY', { maximumFractionDigits: 0 })}</p>}
                               </>
-                            ) : <p className="text-gray-300">—</p>}
+                            ) : <p className="text-muted-2">—</p>}
                           </div>
                           <div>
-                            <p className="text-gray-400 mb-0.5">Ahorros</p>
+                            <p className="text-muted mb-0.5">Ahorros</p>
                             {hasSavings ? (
                               <>
-                                {m.savingsUYU > 0 && <p className="font-bold text-blue-600">$ {m.savingsUYU.toLocaleString('es-UY', { maximumFractionDigits: 0 })}</p>}
-                                {m.savingsUSD > 0 && <p className="font-bold text-blue-700">USD {m.savingsUSD.toLocaleString('es-UY', { maximumFractionDigits: 0 })}</p>}
+                                {m.savingsUYU > 0 && <p className="num font-bold text-savings">$ {m.savingsUYU.toLocaleString('es-UY', { maximumFractionDigits: 0 })}</p>}
+                                {m.savingsUSD > 0 && <p className="num font-bold text-savings">USD {m.savingsUSD.toLocaleString('es-UY', { maximumFractionDigits: 0 })}</p>}
                               </>
-                            ) : <p className="text-gray-300">—</p>}
+                            ) : <p className="text-muted-2">—</p>}
                           </div>
                         </div>
                       </button>
@@ -977,145 +1005,230 @@ export default function Dashboard() {
               )}
             </div>
           )}
-        </div>
+        </section>
 
-        {/* Expenses grouped by category */}
-        <div className="space-y-3">
+        {/* Gastos por categoría */}
+        <section className="space-y-3">
+          <div className="flex items-baseline justify-between px-1">
+            <h2 className="text-sm font-bold text-ink">Gastos por categoría</h2>
+            {expenses.length > 0 && <span className="text-xs text-muted">{expensesByCategory.length} categoría{expensesByCategory.length !== 1 ? 's' : ''}</span>}
+          </div>
+
           {loading ? (
             <div className="flex justify-center py-10">
-              <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+              <div className="w-8 h-8 border-4 border-primary/25 border-t-primary rounded-full animate-spin" />
             </div>
           ) : expenses.length === 0 ? (
-            <div className="bg-white rounded-2xl shadow-sm p-10 text-center">
+            <div className="card p-10 text-center">
               <div className="text-5xl mb-3">🧾</div>
-              <p className="text-gray-500 font-medium">Sin gastos en {monthLabel(selectedMonth)}</p>
-              <p className="text-gray-400 text-sm mt-1">Tocá + para agregar uno</p>
+              <p className="text-ink-2 font-medium">Sin gastos en {monthLabel(selectedMonth)}</p>
+              <p className="text-muted text-sm mt-1">Tocá + para agregar uno</p>
             </div>
           ) : (
-            expensesByCategory.map(group => {
-              const isExpanded = expandedCategories.has(group.cat)
-              return (
-                <div key={group.cat} className="bg-white rounded-2xl shadow-sm overflow-hidden">
-                  <button
-                    className="w-full px-4 py-3.5 flex items-center gap-3"
-                    onClick={() => setExpandedCategories(prev => {
-                      const next = new Set(prev)
-                      if (next.has(group.cat)) next.delete(group.cat)
-                      else next.add(group.cat)
-                      return next
-                    })}
-                  >
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                      style={{ background: '#e8edff' }}>
-                      <span className="text-lg">{group.emoji}</span>
-                    </div>
-                    <div className="flex-1 text-left min-w-0">
-                      <p className="text-sm font-semibold text-gray-800">{group.label}</p>
-                      <p className="text-xs text-gray-400">{group.expenses.length} gasto{group.expenses.length !== 1 ? 's' : ''}</p>
-                    </div>
-                    <div className="text-right flex-shrink-0 mr-2">
-                      {group.uyu > 0 && <p className="text-sm font-bold" style={{ color: '#667eea' }}>{formatMoney(group.uyu, 'UYU')}</p>}
-                      {group.usd > 0 && <p className="text-sm font-bold" style={{ color: '#764ba2' }}>{formatMoney(group.usd, 'USD')}</p>}
-                    </div>
-                    <span className="text-gray-400 text-base">{isExpanded ? '▲' : '▼'}</span>
-                  </button>
+            <>
+              {totalUYU > 0 && (
+                <div className="flex h-2.5 rounded-full overflow-hidden gap-0.5" role="img" aria-label="Distribución de gastos en pesos por categoría">
+                  {expensesByCategory.filter(g => g.uyu > 0).map(g => (
+                    <div key={g.cat} style={{ width: `${(g.uyu / totalUYU) * 100}%`, background: categoryColor(g.cat) }} />
+                  ))}
+                </div>
+              )}
 
-                  {isExpanded && (
-                    <div className="border-t border-gray-100">
-                      {group.expenses.map((expense, idx) => (
-                        <div key={expense.id}
-                          className="px-4 py-3 flex items-center gap-3"
-                          style={{ borderTop: idx > 0 ? '1px solid #f3f4f6' : undefined }}>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-800 truncate">{expense.description}</p>
-                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                              <p className="text-xs text-gray-400">
-                                {expense.expense_date ? formatDate(expense.expense_date) : ''}
+              {expensesByCategory.map(group => {
+                const isExpanded = expandedCategories.has(group.cat)
+                const color = categoryColor(group.cat)
+                const share = totalUYU > 0 && group.uyu > 0 ? Math.round((group.uyu / totalUYU) * 100) : null
+                return (
+                  <div key={group.cat} className="card overflow-hidden">
+                    <button
+                      className="w-full px-4 py-3.5 flex items-center gap-3"
+                      aria-expanded={isExpanded}
+                      onClick={() => setExpandedCategories(prev => {
+                        const next = new Set(prev)
+                        if (next.has(group.cat)) next.delete(group.cat)
+                        else next.add(group.cat)
+                        return next
+                      })}
+                    >
+                      <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
+                        style={{ background: `color-mix(in srgb, ${color} 16%, transparent)` }}>
+                        <span className="text-xl">{group.emoji}</span>
+                      </div>
+                      <div className="flex-1 text-left min-w-0">
+                        <p className="text-sm font-semibold text-ink">{group.label}</p>
+                        <p className="text-xs text-muted">
+                          {group.expenses.length} gasto{group.expenses.length !== 1 ? 's' : ''}{share !== null ? ` · ${share}%` : ''}
+                        </p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        {group.uyu > 0 && <p className="num text-sm font-bold text-ink">{formatMoney(group.uyu, 'UYU')}</p>}
+                        {group.usd > 0 && <p className="num text-sm font-bold" style={{ color: 'var(--accent)' }}>{formatMoney(group.usd, 'USD')}</p>}
+                        {group.eur > 0 && <p className="num text-sm font-bold" style={{ color: 'var(--eur)' }}>{formatMoney(group.eur, 'EUR')}</p>}
+                      </div>
+                      <ChevronDownIcon size={18} className={`text-muted-2 flex-shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {share !== null && (
+                      <div className="h-1 mx-4 mb-3 rounded-full overflow-hidden bg-surface-2 -mt-1">
+                        <div className="h-full rounded-full" style={{ width: `${share}%`, background: color }} />
+                      </div>
+                    )}
+
+                    {isExpanded && (
+                      <div className="border-t border-line">
+                        {group.expenses.map((expense, idx) => (
+                          <div key={expense.id}
+                            className="px-4 py-3 flex items-center gap-3"
+                            style={{ borderTop: idx > 0 ? '1px solid var(--line)' : undefined }}>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-ink truncate">{expense.description}</p>
+                              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                <p className="text-xs text-muted">
+                                  {expense.expense_date ? formatDate(expense.expense_date) : ''}
+                                </p>
+                                {expense.bank && (
+                                  <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
+                                    style={{ background: 'var(--surface-2)', color: 'var(--ink-2)' }}>
+                                    {expense.bank}
+                                  </span>
+                                )}
+                                {expense.is_owed && (
+                                  <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
+                                    style={{ background: 'var(--owed-soft)', color: 'var(--owed)' }}>
+                                    💸 Debes a Fer
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-0.5 flex-shrink-0">
+                              <p className="num font-bold text-sm mr-1.5"
+                                style={{ color: expense.currency === 'USD' ? 'var(--accent)' : expense.currency === 'EUR' ? 'var(--eur)' : 'var(--ink)' }}>
+                                {formatMoney(expense.amount, expense.currency)}
                               </p>
-                              {expense.bank && (
-                                <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
-                                  style={{ background: '#f0f2ff', color: '#667eea' }}>
-                                  {expense.bank}
-                                </span>
-                              )}
-                              {expense.is_owed && (
-                                <span className="text-xs px-1.5 py-0.5 rounded-md font-medium"
-                                  style={{ background: '#fff7ed', color: '#c2410c' }}>
-                                  💸 Debes a Fer
-                                </span>
-                              )}
+                              <button onClick={() => openEditModal(expense)}
+                                className="w-9 h-9 flex items-center justify-center rounded-full text-muted hover:bg-surface-2"
+                                aria-label="Editar gasto"><EditIcon size={17} /></button>
+                              <button onClick={() => setDeleteConfirm(expense.id)}
+                                className="w-9 h-9 flex items-center justify-center rounded-full text-muted hover:text-danger hover:bg-danger-soft"
+                                aria-label="Eliminar gasto"><TrashIcon size={17} /></button>
                             </div>
                           </div>
-                          <div className="flex items-center gap-1 flex-shrink-0">
-                            <p className="font-bold text-sm mr-1" style={{ color: expense.currency === 'USD' ? '#764ba2' : '#667eea' }}>
-                              {formatMoney(expense.amount, expense.currency)}
-                            </p>
-                            <button onClick={() => openEditModal(expense)}
-                              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100">✏️</button>
-                            <button onClick={() => setDeleteConfirm(expense.id)}
-                              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50">🗑️</button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )
-            })
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </>
           )}
-        </div>
-      </div>
+        </section>
+      </main>
+
+      <BottomNav />
 
       {/* Floating Add Button */}
       <button
         onClick={openAddModal}
-        className="fixed bottom-6 right-6 w-16 h-16 rounded-full shadow-xl flex items-center justify-center text-white text-3xl active:scale-90"
-        style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
-      >+</button>
+        className="fixed bottom-24 right-4 z-30 w-14 h-14 rounded-full flex items-center justify-center text-white active:scale-90 transition-transform"
+        style={{ background: 'var(--grad)', boxShadow: 'var(--shadow-float)' }}
+        aria-label="Agregar gasto"
+      ><PlusIcon size={28} /></button>
 
       {/* Add / Edit Expense Modal */}
       {modalMode && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-4 pb-4 sm:pb-0"
-          style={{ background: 'rgba(0,0,0,0.5)' }}
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:px-4"
+          style={{ background: 'var(--overlay)' }}
           onClick={e => { if (e.target === e.currentTarget) closeModal() }}>
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6 max-h-[90vh] overflow-y-auto"
+          <div className="bg-surface border border-line rounded-t-3xl sm:rounded-3xl shadow-2xl w-full max-w-sm p-6 pb-8 sm:pb-6 max-h-[92vh] overflow-y-auto sheet-in"
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-xl font-bold text-gray-800">
+              <h2 className="text-xl font-bold text-ink">
                 {modalMode === 'add' ? 'Agregar gasto' : 'Editar gasto'}
               </h2>
               <button onClick={closeModal}
-                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400">✕</button>
+                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-2 text-muted" aria-label="Cerrar"><CloseIcon size={20} /></button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Monto */}
+              <div>
+                <label className="block text-sm font-medium text-ink-2 mb-1.5">
+                  {formInstallments > 1 ? `Monto total (${getCurrencyLabel(formCurrency)})` : `Monto (${getCurrencyLabel(formCurrency)})`}
+                </label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  autoFocus
+                  value={formAmount}
+                  onChange={e => setFormAmount(e.target.value)}
+                  required
+                  min="0.01"
+                  step="0.01"
+                  placeholder="0.00"
+                  className="field num text-3xl font-bold text-center py-4"
+                />
+              </div>
+
+              {/* Moneda */}
+              <div>
+                <label className="block text-sm font-medium text-ink-2 mb-1.5">Moneda</label>
+                <div className={`grid gap-2 ${userCurrencies.includes('EUR') ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                  {userCurrencies.includes('UYU') && (
+                    <button type="button" onClick={() => setFormCurrency('UYU')}
+                      className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
+                      style={formCurrency === 'UYU'
+                        ? { borderColor: 'var(--primary)', background: 'var(--primary-soft)', color: 'var(--primary)' }
+                        : { borderColor: 'var(--line)', background: 'var(--surface)', color: 'var(--muted-2)' }}>
+                      $ Pesos
+                    </button>
+                  )}
+                  {userCurrencies.includes('USD') && (
+                    <button type="button" onClick={() => setFormCurrency('USD')}
+                      className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
+                      style={formCurrency === 'USD'
+                        ? { borderColor: 'var(--accent)', background: 'var(--accent-soft)', color: 'var(--accent)' }
+                        : { borderColor: 'var(--line)', background: 'var(--surface)', color: 'var(--muted-2)' }}>
+                      $ Dólares
+                    </button>
+                  )}
+                  {userCurrencies.includes('EUR') && (
+                    <button type="button" onClick={() => setFormCurrency('EUR')}
+                      className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
+                      style={formCurrency === 'EUR'
+                        ? { borderColor: 'var(--eur)', background: 'var(--eur-soft)', color: 'var(--eur)' }
+                        : { borderColor: 'var(--line)', background: 'var(--surface)', color: 'var(--muted-2)' }}>
+                      € Euros
+                    </button>
+                  )}
+                </div>
+              </div>
+
               {/* Descripción */}
               <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1.5">Descripción</label>
+                <label className="block text-sm font-medium text-ink-2 mb-1.5">Descripción</label>
                 <input
                   type="text"
                   value={formDesc}
                   onChange={e => setFormDesc(e.target.value)}
                   required
                   placeholder="Ej: Supermercado, Nafta..."
-                  autoFocus
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 text-gray-800 placeholder-gray-400"
+                  className="field"
                 />
               </div>
 
               {/* Categoría */}
               <div>
-                <label className="block text-sm font-medium text-gray-600 mb-2">Categoría</label>
+                <label className="block text-sm font-medium text-ink-2 mb-2">Categoría</label>
                 <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
                   <button
                     type="button"
                     onClick={() => setFormCategory('')}
                     className="flex-shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded-xl border-2 transition-all"
                     style={!formCategory
-                      ? { borderColor: '#667eea', background: '#e8edff' }
-                      : { borderColor: '#e5e7eb', background: 'white' }}>
+                      ? { borderColor: 'var(--primary)', background: 'var(--primary-soft)' }
+                      : { borderColor: 'var(--line)', background: 'var(--surface)' }}>
                     <span className="text-lg">—</span>
-                    <span className="text-xs font-medium" style={{ color: !formCategory ? '#667eea' : '#9ca3af' }}>Ninguna</span>
+                    <span className="text-xs font-medium" style={{ color: !formCategory ? 'var(--primary)' : 'var(--muted-2)' }}>Ninguna</span>
                   </button>
                   {CATEGORIES.map(cat => (
                     <button
@@ -1124,10 +1237,10 @@ export default function Dashboard() {
                       onClick={() => setFormCategory(cat.value)}
                       className="flex-shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded-xl border-2 transition-all"
                       style={formCategory === cat.value
-                        ? { borderColor: '#667eea', background: '#e8edff' }
-                        : { borderColor: '#e5e7eb', background: 'white' }}>
+                        ? { borderColor: 'var(--primary)', background: 'var(--primary-soft)' }
+                        : { borderColor: 'var(--line)', background: 'var(--surface)' }}>
                       <span className="text-lg">{cat.emoji}</span>
-                      <span className="text-xs font-medium" style={{ color: formCategory === cat.value ? '#667eea' : '#9ca3af' }}>
+                      <span className="text-xs font-medium" style={{ color: formCategory === cat.value ? 'var(--primary)' : 'var(--muted-2)' }}>
                         {cat.label}
                       </span>
                     </button>
@@ -1137,11 +1250,11 @@ export default function Dashboard() {
 
               {/* Fecha */}
               <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1.5">Fecha de compra</label>
+                <label className="block text-sm font-medium text-ink-2 mb-1.5">Fecha de compra</label>
                 <div className="relative">
-                  <div className="w-full px-4 py-3 rounded-xl border border-gray-200 text-gray-800 flex items-center justify-between pointer-events-none">
+                  <div className="w-full px-4 py-3 rounded-xl border border-line text-ink flex items-center justify-between pointer-events-none">
                     <span>{formatDateFull(formDate)}</span>
-                    <span className="text-gray-400 text-base">📅</span>
+                    <span className="text-muted-2 text-base">📅</span>
                   </div>
                   <input
                     type="date"
@@ -1155,53 +1268,19 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Moneda */}
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1.5">Moneda</label>
-                <div className={`grid gap-2 ${userCurrencies.includes('EUR') ? 'grid-cols-3' : 'grid-cols-2'}`}>
-                  {userCurrencies.includes('UYU') && (
-                    <button type="button" onClick={() => setFormCurrency('UYU')}
-                      className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
-                      style={formCurrency === 'UYU'
-                        ? { borderColor: '#667eea', background: '#e8edff', color: '#667eea' }
-                        : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
-                      $ Pesos
-                    </button>
-                  )}
-                  {userCurrencies.includes('USD') && (
-                    <button type="button" onClick={() => setFormCurrency('USD')}
-                      className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
-                      style={formCurrency === 'USD'
-                        ? { borderColor: '#764ba2', background: '#f3e8ff', color: '#764ba2' }
-                        : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
-                      $ Dólares
-                    </button>
-                  )}
-                  {userCurrencies.includes('EUR') && (
-                    <button type="button" onClick={() => setFormCurrency('EUR')}
-                      className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
-                      style={formCurrency === 'EUR'
-                        ? { borderColor: '#0ea5e9', background: '#e0f2fe', color: '#0ea5e9' }
-                        : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
-                      € Euros
-                    </button>
-                  )}
-                </div>
-              </div>
-
               {/* Tarjeta */}
               <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1.5">Tarjeta utilizada</label>
+                <label className="block text-sm font-medium text-ink-2 mb-1.5">Tarjeta utilizada</label>
                 <select
                   value={formBank}
                   onChange={e => { setFormBank(e.target.value); setFormInstallments(1) }}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 text-gray-800 bg-white"
+                  className="field text-ink bg-surface"
                 >
                   <option value="">Efectivo / Otros</option>
                   {cardList.map(b => <option key={b} value={b}>{b}</option>)}
                 </select>
                 {formBank && closingDaysMap[formBank] && (
-                  <p className="text-xs text-gray-400 mt-1.5 ml-1">
+                  <p className="text-xs text-muted-2 mt-1.5 ml-1">
                     Cierre: día {closingDaysMap[formBank]} de cada mes
                   </p>
                 )}
@@ -1210,7 +1289,7 @@ export default function Dashboard() {
               {/* Aviso mes de cobro */}
               {billingDiffersFromDate && (
                 <div className="flex items-start gap-2 rounded-xl px-3 py-2.5 text-sm"
-                  style={{ background: '#fff7e6', border: '1px solid #fde68a', color: '#92400e' }}>
+                  style={{ background: 'var(--warn-soft)', border: '1px solid var(--warn-line)', color: 'var(--warn)' }}>
                   <span className="mt-0.5">⚠️</span>
                   <span>Por el cierre de <strong>{formBank}</strong>, este gasto se asignará a <strong>{monthLabel(billingMonth)}</strong></span>
                 </div>
@@ -1219,7 +1298,7 @@ export default function Dashboard() {
               {/* Cuotas */}
               {formBank && isFormBankCredit && modalMode === 'add' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1.5">Cuotas</label>
+                  <label className="block text-sm font-medium text-ink-2 mb-1.5">Cuotas</label>
                   <div className="flex gap-2 flex-wrap">
                     {[1, 2, 3, 6, 12].map(n => (
                       <button
@@ -1228,37 +1307,20 @@ export default function Dashboard() {
                         onClick={() => setFormInstallments(n)}
                         className="px-4 py-2 rounded-xl border-2 font-semibold text-sm transition-all"
                         style={formInstallments === n
-                          ? { borderColor: '#667eea', background: '#e8edff', color: '#667eea' }
-                          : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}
+                          ? { borderColor: 'var(--primary)', background: 'var(--primary-soft)', color: 'var(--primary)' }
+                          : { borderColor: 'var(--line)', background: 'var(--surface)', color: 'var(--muted-2)' }}
                       >
                         {n === 1 ? 'Sin cuotas' : `${n}x`}
                       </button>
                     ))}
                   </div>
                   {formInstallments > 1 && formAmount && !isNaN(parseFloat(formAmount)) && (
-                    <p className="text-xs text-gray-500 mt-2 ml-1">
+                    <p className="text-xs text-muted mt-2 ml-1">
                       Se crearán {formInstallments} cuotas de {formatMoney(Math.round(parseFloat(formAmount) / formInstallments * 100) / 100, formCurrency)} desde <strong>{monthLabel(billingMonth)}</strong>
                     </p>
                   )}
                 </div>
               )}
-
-              {/* Monto */}
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1.5">
-                  {formInstallments > 1 ? `Monto total (${getCurrencyLabel(formCurrency)})` : `Monto (${getCurrencyLabel(formCurrency)})`}
-                </label>
-                <input
-                  type="number"
-                  value={formAmount}
-                  onChange={e => setFormAmount(e.target.value)}
-                  required
-                  min="0.01"
-                  step="0.01"
-                  placeholder="0.00"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 text-gray-800 placeholder-gray-400 text-lg font-semibold"
-                />
-              </div>
 
               {/* Debes a Fer — solo para usuarios legacy */}
               {isLegacy && (
@@ -1267,16 +1329,16 @@ export default function Dashboard() {
                   onClick={() => setFormIsOwed(prev => !prev)}
                   className="w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all"
                   style={formIsOwed
-                    ? { borderColor: '#f97316', background: '#fff7ed' }
-                    : { borderColor: '#e5e7eb', background: 'white' }}>
+                    ? { borderColor: 'var(--owed)', background: 'var(--owed-soft)' }
+                    : { borderColor: 'var(--line)', background: 'var(--surface)' }}>
                   <div className="flex items-center gap-2">
                     <span className="text-lg">💸</span>
-                    <span className="text-sm font-medium" style={{ color: formIsOwed ? '#c2410c' : '#6b7280' }}>
+                    <span className="text-sm font-medium" style={{ color: formIsOwed ? 'var(--owed)' : 'var(--muted)' }}>
                       Debes a Fer
                     </span>
                   </div>
                   <div className="w-10 h-6 rounded-full transition-all relative"
-                    style={{ background: formIsOwed ? '#f97316' : '#e5e7eb' }}>
+                    style={{ background: formIsOwed ? 'var(--owed)' : 'var(--line)' }}>
                     <div className="w-4 h-4 bg-white rounded-full absolute top-1 transition-all shadow-sm"
                       style={{ left: formIsOwed ? '22px' : '2px' }} />
                   </div>
@@ -1284,19 +1346,19 @@ export default function Dashboard() {
               )}
 
               {formError && (
-                <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl">
+                <div className="bg-danger-soft border border-danger/30 text-danger text-sm px-4 py-3 rounded-xl">
                   {formError}
                 </div>
               )}
 
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={closeModal}
-                  className="flex-1 py-3 rounded-xl font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50">
+                  className="flex-1 py-3 rounded-xl font-semibold text-ink-2 border border-line hover:bg-surface-2">
                   Cancelar
                 </button>
                 <button type="submit" disabled={formLoading}
                   className="flex-1 py-3 rounded-xl font-semibold text-white active:scale-95 disabled:opacity-70"
-                  style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+                  style={{ background: 'var(--grad)' }}>
                   {formLoading
                     ? <span className="flex items-center justify-center gap-2">
                         <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -1314,22 +1376,22 @@ export default function Dashboard() {
 
       {/* Add Income / Savings Modal */}
       {showIncomeModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-4 pb-4 sm:pb-0"
-          style={{ background: 'rgba(0,0,0,0.5)' }}
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:px-4"
+          style={{ background: 'var(--overlay)' }}
           onClick={e => { if (e.target === e.currentTarget) setShowIncomeModal(false) }}>
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6"
+          <div className="bg-surface border border-line rounded-t-3xl sm:rounded-3xl shadow-2xl w-full max-w-sm p-6 pb-8 sm:pb-6 sheet-in"
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-xl font-bold text-gray-800">
+              <h2 className="text-xl font-bold text-ink">
                 {incomeModalType === 'income' ? '💼 Agregar ingreso' : '🏦 Agregar ahorro'}
               </h2>
               <button onClick={() => setShowIncomeModal(false)}
-                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400">✕</button>
+                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-2 text-muted" aria-label="Cerrar"><CloseIcon size={20} /></button>
             </div>
 
             <form onSubmit={handleAddIncome} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1.5">Descripción</label>
+                <label className="block text-sm font-medium text-ink-2 mb-1.5">Descripción</label>
                 <input
                   type="text"
                   value={incomeDesc}
@@ -1337,19 +1399,19 @@ export default function Dashboard() {
                   required
                   placeholder="Ej: Sueldo, Freelance..."
                   autoFocus
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 text-gray-800 placeholder-gray-400"
+                  className="field text-ink placeholder-muted-2"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1.5">Moneda</label>
+                <label className="block text-sm font-medium text-ink-2 mb-1.5">Moneda</label>
                 <div className={`grid gap-2 ${userCurrencies.includes('EUR') ? 'grid-cols-3' : 'grid-cols-2'}`}>
                   {userCurrencies.includes('UYU') && (
                     <button type="button" onClick={() => setIncomeCurrency('UYU')}
                       className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
                       style={incomeCurrency === 'UYU'
-                        ? { borderColor: '#667eea', background: '#e8edff', color: '#667eea' }
-                        : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
+                        ? { borderColor: 'var(--primary)', background: 'var(--primary-soft)', color: 'var(--primary)' }
+                        : { borderColor: 'var(--line)', background: 'var(--surface)', color: 'var(--muted-2)' }}>
                       $ Pesos
                     </button>
                   )}
@@ -1357,8 +1419,8 @@ export default function Dashboard() {
                     <button type="button" onClick={() => setIncomeCurrency('USD')}
                       className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
                       style={incomeCurrency === 'USD'
-                        ? { borderColor: '#764ba2', background: '#f3e8ff', color: '#764ba2' }
-                        : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
+                        ? { borderColor: 'var(--accent)', background: 'var(--accent-soft)', color: 'var(--accent)' }
+                        : { borderColor: 'var(--line)', background: 'var(--surface)', color: 'var(--muted-2)' }}>
                       $ Dólares
                     </button>
                   )}
@@ -1366,8 +1428,8 @@ export default function Dashboard() {
                     <button type="button" onClick={() => setIncomeCurrency('EUR')}
                       className="py-3 px-4 rounded-xl border-2 font-semibold text-sm transition-all"
                       style={incomeCurrency === 'EUR'
-                        ? { borderColor: '#0ea5e9', background: '#e0f2fe', color: '#0ea5e9' }
-                        : { borderColor: '#e5e7eb', background: 'white', color: '#9ca3af' }}>
+                        ? { borderColor: 'var(--eur)', background: 'var(--eur-soft)', color: 'var(--eur)' }
+                        : { borderColor: 'var(--line)', background: 'var(--surface)', color: 'var(--muted-2)' }}>
                       € Euros
                     </button>
                   )}
@@ -1375,7 +1437,7 @@ export default function Dashboard() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1.5">
+                <label className="block text-sm font-medium text-ink-2 mb-1.5">
                   Monto ({getCurrencyLabel(incomeCurrency)})
                 </label>
                 <input
@@ -1386,24 +1448,24 @@ export default function Dashboard() {
                   min="0.01"
                   step="0.01"
                   placeholder="0.00"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 text-gray-800 placeholder-gray-400 text-lg font-semibold"
+                  className="field text-ink placeholder-muted-2 text-lg font-semibold"
                 />
               </div>
 
               {incomeError && (
-                <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl">
+                <div className="bg-danger-soft border border-danger/30 text-danger text-sm px-4 py-3 rounded-xl">
                   {incomeError}
                 </div>
               )}
 
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setShowIncomeModal(false)}
-                  className="flex-1 py-3 rounded-xl font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50">
+                  className="flex-1 py-3 rounded-xl font-semibold text-ink-2 border border-line hover:bg-surface-2">
                   Cancelar
                 </button>
                 <button type="submit" disabled={incomeFormLoading}
                   className="flex-1 py-3 rounded-xl font-semibold text-white active:scale-95 disabled:opacity-70"
-                  style={{ background: incomeModalType === 'income' ? 'linear-gradient(135deg, #22c55e, #16a34a)' : 'linear-gradient(135deg, #3b82f6, #1d4ed8)' }}>
+                  style={{ background: incomeModalType === 'income' ? 'linear-gradient(135deg, var(--income), var(--income))' : 'linear-gradient(135deg, var(--savings), var(--savings))' }}>
                   {incomeFormLoading
                     ? <span className="flex items-center justify-center gap-2">
                         <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -1420,16 +1482,16 @@ export default function Dashboard() {
       {/* Delete Expense Confirm */}
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
-          style={{ background: 'rgba(0,0,0,0.5)' }}
+          style={{ background: 'var(--overlay)' }}
           onClick={() => setDeleteConfirm(null)}>
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xs p-6 text-center"
+          <div className="bg-surface border border-line rounded-3xl shadow-2xl w-full max-w-xs p-6 text-center sheet-in"
             onClick={e => e.stopPropagation()}>
             <div className="text-4xl mb-3">🗑️</div>
-            <h3 className="text-lg font-bold text-gray-800 mb-2">¿Eliminar gasto?</h3>
-            <p className="text-gray-500 text-sm mb-5">Esta acción no se puede deshacer.</p>
+            <h3 className="text-lg font-bold text-ink mb-2">¿Eliminar gasto?</h3>
+            <p className="text-muted text-sm mb-5">Esta acción no se puede deshacer.</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteConfirm(null)}
-                className="flex-1 py-3 rounded-xl font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50">
+                className="flex-1 py-3 rounded-xl font-semibold text-ink-2 border border-line hover:bg-surface-2">
                 Cancelar
               </button>
               <button onClick={() => handleDelete(deleteConfirm)}
@@ -1444,16 +1506,16 @@ export default function Dashboard() {
       {/* Delete Income / Savings Confirm */}
       {deleteIncomeConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
-          style={{ background: 'rgba(0,0,0,0.5)' }}
+          style={{ background: 'var(--overlay)' }}
           onClick={() => setDeleteIncomeConfirm(null)}>
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xs p-6 text-center"
+          <div className="bg-surface border border-line rounded-3xl shadow-2xl w-full max-w-xs p-6 text-center sheet-in"
             onClick={e => e.stopPropagation()}>
             <div className="text-4xl mb-3">🗑️</div>
-            <h3 className="text-lg font-bold text-gray-800 mb-2">¿Eliminar registro?</h3>
-            <p className="text-gray-500 text-sm mb-5">Esta acción no se puede deshacer.</p>
+            <h3 className="text-lg font-bold text-ink mb-2">¿Eliminar registro?</h3>
+            <p className="text-muted text-sm mb-5">Esta acción no se puede deshacer.</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteIncomeConfirm(null)}
-                className="flex-1 py-3 rounded-xl font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50">
+                className="flex-1 py-3 rounded-xl font-semibold text-ink-2 border border-line hover:bg-surface-2">
                 Cancelar
               </button>
               <button onClick={() => handleDeleteIncome(deleteIncomeConfirm)}
@@ -1467,73 +1529,73 @@ export default function Dashboard() {
 
       {/* Share Modal */}
       {showShare && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-4 pb-4 sm:pb-0"
-          style={{ background: 'rgba(0,0,0,0.5)' }}
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:px-4"
+          style={{ background: 'var(--overlay)' }}
           onClick={e => { if (e.target === e.currentTarget) setShowShare(false) }}>
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+          <div className="bg-surface border border-line rounded-t-3xl sm:rounded-3xl shadow-2xl w-full max-w-sm p-6 pb-8 sm:pb-6 sheet-in" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-xl font-bold text-gray-800">Compartir cuenta</h2>
+              <h2 className="text-xl font-bold text-ink">Compartir cuenta</h2>
               <button onClick={() => setShowShare(false)}
-                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400">✕</button>
+                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-2 text-muted" aria-label="Cerrar"><CloseIcon size={20} /></button>
             </div>
 
-            <div className="flex rounded-xl overflow-hidden border border-gray-200 mb-5">
+            <div className="flex rounded-xl overflow-hidden border border-line mb-5">
               <button onClick={() => setShareTab('mycode')}
                 className="flex-1 py-2.5 text-xs font-semibold"
                 style={shareTab === 'mycode'
-                  ? { background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }
-                  : { background: 'white', color: '#6b7280' }}>
+                  ? { background: 'var(--grad)', color: 'white' }
+                  : { background: 'var(--surface)', color: 'var(--muted)' }}>
                 Mi código
               </button>
               <button onClick={() => setShareTab('join')}
                 className="flex-1 py-2.5 text-xs font-semibold"
                 style={shareTab === 'join'
-                  ? { background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }
-                  : { background: 'white', color: '#6b7280' }}>
+                  ? { background: 'var(--grad)', color: 'white' }
+                  : { background: 'var(--surface)', color: 'var(--muted)' }}>
                 Unirme
               </button>
               <button onClick={() => setShareTab('telegram')}
                 className="flex-1 py-2.5 text-xs font-semibold"
                 style={shareTab === 'telegram'
-                  ? { background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }
-                  : { background: 'white', color: '#6b7280' }}>
+                  ? { background: 'var(--grad)', color: 'white' }
+                  : { background: 'var(--surface)', color: 'var(--muted)' }}>
                 ✈️ Telegram
               </button>
               <button onClick={() => setShareTab('whatsapp')}
                 className="flex-1 py-2.5 text-xs font-semibold"
                 style={shareTab === 'whatsapp'
                   ? { background: 'linear-gradient(135deg, #25d366 0%, #128c7e 100%)', color: 'white' }
-                  : { background: 'white', color: '#6b7280' }}>
+                  : { background: 'var(--surface)', color: 'var(--muted)' }}>
                 💬 WhatsApp
               </button>
             </div>
 
             {shareTab === 'mycode' && (
               <div className="space-y-4">
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-muted">
                   Compartí este código para que otra persona pueda ver y agregar tus gastos.
                 </p>
                 {myInviteCode ? (
                   <>
                     <div className="flex items-center gap-2">
-                      <div className="flex-1 bg-gray-50 rounded-xl px-4 py-3 font-mono text-xl font-bold text-center tracking-widest"
-                        style={{ color: '#667eea' }}>
+                      <div className="flex-1 bg-surface-2 rounded-xl px-4 py-3 font-mono text-xl font-bold text-center tracking-widest"
+                        style={{ color: 'var(--primary)' }}>
                         {myInviteCode}
                       </div>
                       <button onClick={handleCopyCode}
                         className="px-4 py-3 rounded-xl font-semibold text-sm"
-                        style={{ background: codeCopied ? '#e8edff' : '#f3f4f6', color: codeCopied ? '#667eea' : '#374151' }}>
+                        style={{ background: codeCopied ? 'var(--primary-soft)' : 'var(--surface-2)', color: codeCopied ? 'var(--primary)' : 'var(--ink-2)' }}>
                         {codeCopied ? '✓' : 'Copiar'}
                       </button>
                     </div>
-                    <p className="text-xs text-gray-400 text-center">
+                    <p className="text-xs text-muted-2 text-center">
                       Quien use este código podrá ver y agregar gastos en tu cuenta.
                     </p>
                   </>
                 ) : (
                   <button onClick={handleGenerateCode}
                     className="w-full py-3 rounded-xl font-semibold text-white"
-                    style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+                    style={{ background: 'var(--grad)' }}>
                     Generar código
                   </button>
                 )}
@@ -1542,7 +1604,7 @@ export default function Dashboard() {
 
             {shareTab === 'join' && (
               <div className="space-y-4">
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-muted">
                   Ingresá el código de la persona para ver sus gastos.
                 </p>
                 <input
@@ -1551,17 +1613,17 @@ export default function Dashboard() {
                   onChange={e => setJoinCode(e.target.value.toUpperCase())}
                   placeholder="Ej: AB12CD34"
                   maxLength={8}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 text-center font-mono text-xl tracking-widest text-gray-800 uppercase"
+                  className="field text-center font-mono text-xl tracking-widest text-ink uppercase"
                 />
                 {joinError && (
-                  <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl">{joinError}</div>
+                  <div className="bg-danger-soft border border-danger/30 text-danger text-sm px-4 py-3 rounded-xl">{joinError}</div>
                 )}
                 {joinSuccess && (
-                  <div className="bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-3 rounded-xl">{joinSuccess}</div>
+                  <div className="bg-income-soft border border-income/30 text-income text-sm px-4 py-3 rounded-xl">{joinSuccess}</div>
                 )}
                 <button onClick={handleJoin} disabled={joinLoading || !joinCode.trim()}
                   className="w-full py-3 rounded-xl font-semibold text-white disabled:opacity-50"
-                  style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+                  style={{ background: 'var(--grad)' }}>
                   {joinLoading
                     ? <span className="flex items-center justify-center gap-2">
                         <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -1574,36 +1636,36 @@ export default function Dashboard() {
 
             {shareTab === 'telegram' && (
               <div className="space-y-4">
-                <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af' }}>
+                <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: 'var(--savings-soft)', border: '1px solid var(--line)', color: 'var(--savings)' }}>
                   <p className="font-semibold mb-1.5">Cómo vincular tu cuenta:</p>
                   <p>1. Abrí Telegram y buscá tu bot</p>
                   <p>2. Mandále <span className="font-mono font-bold">/start</span></p>
                   <p>3. El bot te responde con tu ID — pegalo abajo</p>
                 </div>
-                <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534' }}>
+                <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: 'var(--income-soft)', border: '1px solid var(--line)', color: 'var(--income)' }}>
                   <p className="font-semibold">Formato para agregar gastos:</p>
                   <p className="font-mono">Compra helado por 150 con itau</p>
                   <p className="font-mono">Pizza por 350</p>
                   <p className="font-mono">Uber por 80 con brou</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1.5">Tu ID de Telegram</label>
+                  <label className="block text-sm font-medium text-ink-2 mb-1.5">Tu ID de Telegram</label>
                   <input
                     type="text"
                     value={phoneInput}
                     onChange={e => setPhoneInput(e.target.value)}
                     placeholder="Ej: 987654321"
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 text-gray-800 placeholder-gray-400 font-mono text-lg tracking-wider"
+                    className="field text-ink placeholder-muted-2 font-mono text-lg tracking-wider"
                   />
                 </div>
                 {phoneSaved && (
-                  <div className="bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-3 rounded-xl">
+                  <div className="bg-income-soft border border-income/30 text-income text-sm px-4 py-3 rounded-xl">
                     ✓ ID guardado correctamente
                   </div>
                 )}
                 <button onClick={handleSavePhone} disabled={phoneLoading || !phoneInput.trim()}
                   className="w-full py-3 rounded-xl font-semibold text-white disabled:opacity-50"
-                  style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+                  style={{ background: 'var(--grad)' }}>
                   {phoneLoading
                     ? <span className="flex items-center justify-center gap-2">
                         <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -1616,7 +1678,7 @@ export default function Dashboard() {
 
             {shareTab === 'whatsapp' && (
               <div className="space-y-4">
-                <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534' }}>
+                <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: 'var(--income-soft)', border: '1px solid var(--line)', color: 'var(--income)' }}>
                   <p className="font-semibold mb-1.5">Cómo vincular tu cuenta (3 pasos):</p>
                   <p><strong>Paso 1:</strong> Agendá este número con nombre "Mis gastos"</p>
                   <p className="font-mono font-bold">+1 (415) 523-8886</p>
@@ -1624,29 +1686,29 @@ export default function Dashboard() {
                   <p className="font-mono font-bold">join silver-equipment</p>
                   <p><strong>Paso 3:</strong> Ingresá tu número abajo con código de país (ej: +59812345678)</p>
                 </div>
-                <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af' }}>
+                <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: 'var(--savings-soft)', border: '1px solid var(--line)', color: 'var(--savings)' }}>
                   <p className="font-semibold">Ejemplos de gastos:</p>
                   <p className="font-mono">"pizza 350 itau"</p>
                   <p className="font-mono">"gasté 1200 en ropa"</p>
                   <p className="font-mono">"celular 30000 en 6 cuotas"</p>
                 </div>
                 {myWhatsapp && (
-                  <div className="rounded-xl px-4 py-2.5 text-sm flex items-center gap-2" style={{ background: '#f0fdf4', color: '#166534' }}>
+                  <div className="rounded-xl px-4 py-2.5 text-sm flex items-center gap-2" style={{ background: 'var(--income-soft)', color: 'var(--income)' }}>
                     <span>✓</span> Vinculado: <span className="font-mono font-semibold">{myWhatsapp}</span>
                   </div>
                 )}
                 <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1.5">Tu número de WhatsApp</label>
+                  <label className="block text-sm font-medium text-ink-2 mb-1.5">Tu número de WhatsApp</label>
                   <input
                     type="tel"
                     value={whatsappInput}
                     onChange={e => setWhatsappInput(e.target.value)}
                     placeholder="Ej: +59812345678"
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 text-gray-800 placeholder-gray-400 font-mono text-lg tracking-wider"
+                    className="field text-ink placeholder-muted-2 font-mono text-lg tracking-wider"
                   />
                 </div>
                 {whatsappSaved && (
-                  <div className="bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-3 rounded-xl">
+                  <div className="bg-income-soft border border-income/30 text-income text-sm px-4 py-3 rounded-xl">
                     ✓ Número guardado correctamente
                   </div>
                 )}

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, type SharedGroup, SHARED_THEMES } from '@/lib/supabase'
+import BottomNav from '@/app/components/BottomNav'
 
 function generateCode() {
   return Math.random().toString(36).substring(2, 10).toUpperCase()
@@ -124,10 +125,10 @@ export default function SharedGroupsPage() {
   const themeInfo = (theme: string) => SHARED_THEMES.find(t => t.value === theme) ?? SHARED_THEMES[0]
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-bg text-ink pb-32">
       <div className="max-w-lg mx-auto px-4 py-6">
         <div className="flex items-center gap-3 mb-6">
-          <button onClick={() => router.push('/dashboard')} className="text-gray-400 hover:text-white transition-colors">
+          <button onClick={() => router.push('/dashboard')} className="text-muted hover:text-ink transition-colors">
             ← Volver
           </button>
           <h1 className="text-xl font-bold flex-1">Gastos Compartidos</h1>
@@ -136,23 +137,23 @@ export default function SharedGroupsPage() {
         <div className="flex gap-3 mb-6">
           <button
             onClick={() => { setShowCreate(true); setShowJoin(false) }}
-            className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2.5 rounded-xl transition-colors"
+            className="flex-1 [background:var(--grad)] hover:brightness-110 text-white font-medium py-2.5 rounded-xl transition-colors"
           >
             + Crear grupo
           </button>
           <button
             onClick={() => { setShowJoin(true); setShowCreate(false) }}
-            className="flex-1 bg-gray-800 hover:bg-gray-700 text-white font-medium py-2.5 rounded-xl transition-colors"
+            className="flex-1 bg-surface-2 hover:bg-surface text-ink shadow-sm font-medium py-2.5 rounded-xl transition-colors"
           >
             Unirse con código
           </button>
         </div>
 
         {showCreate && (
-          <div className="bg-gray-900 rounded-2xl p-4 mb-4 border border-gray-800">
+          <div className="bg-surface rounded-2xl p-4 mb-4 border border-line">
             <h2 className="font-semibold mb-3">Nuevo grupo</h2>
             <input
-              className="w-full bg-gray-800 rounded-xl px-4 py-2.5 text-sm mb-3 outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full bg-surface-2 rounded-xl px-4 py-2.5 text-sm mb-3 outline-none focus:ring-2 focus:ring-primary"
               placeholder="Nombre del grupo"
               value={createName}
               onChange={e => setCreateName(e.target.value)}
@@ -162,7 +163,7 @@ export default function SharedGroupsPage() {
                 <button
                   key={t.value}
                   onClick={() => setCreateTheme(t.value)}
-                  className={`py-2 rounded-xl text-sm font-medium transition-colors ${createTheme === t.value ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
+                  className={`py-2 rounded-xl text-sm font-medium transition-colors ${createTheme === t.value ? 'bg-emerald-600 text-ink' : 'bg-surface-2 text-ink-2 hover:bg-line'}`}
                 >
                   {t.emoji} {t.label}
                 </button>
@@ -173,24 +174,24 @@ export default function SharedGroupsPage() {
                 <button
                   key={c}
                   onClick={() => setCreateCurrency(c)}
-                  className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${createCurrency === c ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
+                  className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${createCurrency === c ? 'bg-emerald-600 text-ink' : 'bg-surface-2 text-ink-2 hover:bg-line'}`}
                 >
                   {c}
                 </button>
               ))}
             </div>
-            {createError && <p className="text-red-400 text-sm mb-2">{createError}</p>}
+            {createError && <p className="text-danger text-sm mb-2">{createError}</p>}
             <div className="flex gap-2">
               <button
                 onClick={handleCreate}
                 disabled={createLoading}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium py-2 rounded-xl transition-colors"
+                className="flex-1 [background:var(--grad)] hover:brightness-110 disabled:opacity-50 text-white font-medium py-2 rounded-xl transition-colors"
               >
                 {createLoading ? 'Creando...' : 'Crear'}
               </button>
               <button
                 onClick={() => setShowCreate(false)}
-                className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium py-2 rounded-xl transition-colors"
+                className="flex-1 bg-surface-2 hover:bg-line text-ink-2 font-medium py-2 rounded-xl transition-colors"
               >
                 Cancelar
               </button>
@@ -199,26 +200,26 @@ export default function SharedGroupsPage() {
         )}
 
         {showJoin && (
-          <div className="bg-gray-900 rounded-2xl p-4 mb-4 border border-gray-800">
+          <div className="bg-surface rounded-2xl p-4 mb-4 border border-line">
             <h2 className="font-semibold mb-3">Unirse a un grupo</h2>
             <input
-              className="w-full bg-gray-800 rounded-xl px-4 py-2.5 text-sm mb-3 outline-none focus:ring-2 focus:ring-emerald-500 uppercase tracking-widest"
+              className="w-full bg-surface-2 rounded-xl px-4 py-2.5 text-sm mb-3 outline-none focus:ring-2 focus:ring-primary uppercase tracking-widest"
               placeholder="Código de invitación"
               value={joinCode}
               onChange={e => setJoinCode(e.target.value.toUpperCase())}
             />
-            {joinError && <p className="text-red-400 text-sm mb-2">{joinError}</p>}
+            {joinError && <p className="text-danger text-sm mb-2">{joinError}</p>}
             <div className="flex gap-2">
               <button
                 onClick={handleJoin}
                 disabled={joinLoading}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium py-2 rounded-xl transition-colors"
+                className="flex-1 [background:var(--grad)] hover:brightness-110 disabled:opacity-50 text-white font-medium py-2 rounded-xl transition-colors"
               >
                 {joinLoading ? 'Uniéndose...' : 'Unirse'}
               </button>
               <button
                 onClick={() => setShowJoin(false)}
-                className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium py-2 rounded-xl transition-colors"
+                className="flex-1 bg-surface-2 hover:bg-line text-ink-2 font-medium py-2 rounded-xl transition-colors"
               >
                 Cancelar
               </button>
@@ -227,9 +228,9 @@ export default function SharedGroupsPage() {
         )}
 
         {loading ? (
-          <div className="text-center text-gray-500 py-12">Cargando...</div>
+          <div className="text-center text-muted-2 py-12">Cargando...</div>
         ) : groups.length === 0 ? (
-          <div className="text-center text-gray-500 py-12">
+          <div className="text-center text-muted-2 py-12">
             <p className="text-4xl mb-3">👥</p>
             <p>No tenés grupos todavía.</p>
             <p className="text-sm mt-1">Creá uno o unite con un código.</p>
@@ -242,15 +243,15 @@ export default function SharedGroupsPage() {
                 <button
                   key={g.id}
                   onClick={() => router.push(`/shared/${g.id}`)}
-                  className="w-full bg-gray-900 hover:bg-gray-800 rounded-2xl p-4 text-left border border-gray-800 hover:border-gray-700 transition-all"
+                  className="w-full bg-surface hover:bg-surface-2 rounded-2xl p-4 text-left border border-line hover:border-primary transition-all"
                 >
                   <div className="flex items-center gap-3">
                     <span className="text-3xl">{t.emoji}</span>
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold truncate">{g.name}</p>
-                      <p className="text-sm text-gray-400">{t.label} · {g.currency}</p>
+                      <p className="text-sm text-muted">{t.label} · {g.currency}</p>
                     </div>
-                    <span className="text-gray-500">→</span>
+                    <span className="text-muted-2">→</span>
                   </div>
                 </button>
               )
@@ -258,6 +259,7 @@ export default function SharedGroupsPage() {
           </div>
         )}
       </div>
+      <BottomNav />
     </div>
   )
 }

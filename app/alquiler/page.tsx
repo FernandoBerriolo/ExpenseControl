@@ -7,6 +7,8 @@ import type { RentalSettings } from '@/lib/alquiler/types'
 import PagosTab from './PagosTab'
 import AsistenteTab from './AsistenteTab'
 import ConfigTab from './ConfigTab'
+import BottomNav from '@/app/components/BottomNav'
+import { BuildingIcon } from '@/app/components/Icons'
 
 type Tab = 'pagos' | 'asistente' | 'config'
 
@@ -48,34 +50,43 @@ export default function AlquilerPage() {
   }, [router, loadSettings])
 
   return (
-    <div className="min-h-screen" style={{ background: '#f0f2ff' }}>
-      <div className="sticky top-0 z-10 shadow-sm" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
-        <div className="max-w-lg mx-auto px-4 py-4 flex items-center gap-3">
-          <button onClick={() => router.push('/dashboard')} className="text-white/80 hover:text-white text-xl" title="Volver">‹</button>
-          <span className="text-2xl">🏠</span>
-          <span className="text-white font-bold text-lg">Mi apartamento</span>
+    <div className="min-h-screen pb-32" style={{ background: 'var(--bg)' }}>
+      <header className="sticky top-0 z-20 border-b border-line"
+        style={{ background: 'color-mix(in srgb, var(--bg) 88%, transparent)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)' }}>
+        <div className="max-w-lg mx-auto px-4 pt-3 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white flex-shrink-0" style={{ background: 'var(--grad)' }}>
+              <BuildingIcon size={19} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] text-muted leading-none">Edificio Asencio · 705</p>
+              <p className="text-base font-bold text-ink leading-tight">Mi apartamento</p>
+            </div>
+          </div>
+          <div className="mt-3 p-1 rounded-2xl bg-surface-2 grid grid-cols-3 gap-1" role="tablist">
+            {TABS.map(t => (
+              <button
+                key={t.value}
+                role="tab"
+                aria-selected={tab === t.value}
+                onClick={() => setTab(t.value)}
+                className="py-2 rounded-xl text-xs font-semibold transition-all"
+                style={tab === t.value
+                  ? { background: 'var(--surface)', color: 'var(--primary)', boxShadow: 'var(--shadow-card)' }
+                  : { background: 'transparent', color: 'var(--muted)' }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="max-w-lg mx-auto px-4 pb-3 flex gap-2">
-          {TABS.map(t => (
-            <button
-              key={t.value}
-              onClick={() => setTab(t.value)}
-              className="flex-1 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
-              style={tab === t.value
-                ? { background: 'white', color: '#667eea' }
-                : { background: 'rgba(255,255,255,0.2)', color: 'white' }}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      </header>
 
-      <div className="max-w-lg mx-auto px-4 py-6">
+      <main className="max-w-lg mx-auto px-4 pt-4">
         {!ready ? (
-          <p className="text-center text-sm text-gray-400 py-8">Cargando…</p>
+          <p className="text-center text-sm text-muted-2 py-8">Cargando…</p>
         ) : loadError ? (
-          <p className="text-center text-sm text-red-500 py-8">{loadError}</p>
+          <p className="text-center text-sm text-danger py-8">{loadError}</p>
         ) : (
           <>
             {tab === 'pagos' && <PagosTab userId={userId} homeId={homeId} settings={settings} />}
@@ -83,7 +94,9 @@ export default function AlquilerPage() {
             {tab === 'config' && <ConfigTab userId={userId} homeId={homeId} settings={settings} onSaved={() => loadSettings(homeId)} />}
           </>
         )}
-      </div>
+      </main>
+
+      <BottomNav />
     </div>
   )
 }

@@ -61,18 +61,18 @@ export default function AsistenteTab({ userId, homeId }: { userId: string; homeI
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+      <div className="card overflow-hidden">
         <div className="p-4 space-y-2 min-h-[240px] max-h-[55vh] overflow-y-auto flex flex-col">
           {messages.length === 0 && (
             <div className="space-y-3">
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted">
                 Preguntame sobre el reglamento y el manual del edificio, o sobre el estado de tus pagos.
               </p>
               <div className="flex flex-wrap gap-2">
                 {SUGGESTIONS.map(s => (
                   <button key={s} onClick={() => send(s)}
                     className="text-xs px-3 py-2 rounded-xl text-left"
-                    style={{ background: '#e8edff', color: '#667eea' }}>
+                    style={{ background: 'var(--primary-soft)', color: 'var(--primary)' }}>
                     {s}
                   </button>
                 ))}
@@ -84,8 +84,8 @@ export default function AsistenteTab({ userId, homeId }: { userId: string; homeI
               <div
                 className="max-w-[85%] px-3 py-2 rounded-xl text-sm whitespace-pre-line leading-relaxed"
                 style={m.role === 'user'
-                  ? { background: '#667eea', color: '#fff', borderBottomRightRadius: 4 }
-                  : { background: '#f3f4f6', color: '#111827', borderBottomLeftRadius: 4 }}
+                  ? { background: 'var(--primary)', color: '#fff', borderBottomRightRadius: 4 }
+                  : { background: 'var(--surface-2)', color: 'var(--ink)', borderBottomLeftRadius: 4 }}
               >
                 {m.content}
               </div>
@@ -93,13 +93,13 @@ export default function AsistenteTab({ userId, homeId }: { userId: string; homeI
           ))}
           {loading && (
             <div className="flex justify-start">
-              <div className="px-3 py-2 rounded-xl text-sm text-gray-400" style={{ background: '#f3f4f6' }}>···</div>
+              <div className="px-3 py-2 rounded-xl text-sm text-muted-2" style={{ background: 'var(--surface-2)' }}>···</div>
             </div>
           )}
           <div ref={bottomRef} />
         </div>
 
-        <div className="p-3 border-t border-gray-100 flex gap-2">
+        <div className="p-3 border-t border-line flex gap-2">
           <input
             value={input}
             onChange={e => setInput(e.target.value)}
@@ -107,13 +107,13 @@ export default function AsistenteTab({ userId, homeId }: { userId: string; homeI
             placeholder="Escribí tu pregunta…"
             disabled={loading}
             maxLength={2000}
-            className="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:border-indigo-400"
+            className="flex-1 px-3 py-2 rounded-xl border border-line bg-surface text-sm text-ink placeholder-muted-2 outline-none focus:border-primary"
           />
           <button
             onClick={() => send(input)}
             disabled={loading || !input.trim()}
             className="w-10 h-10 rounded-xl text-white flex items-center justify-center"
-            style={{ background: input.trim() && !loading ? '#667eea' : '#d1d5db' }}
+            style={{ background: input.trim() && !loading ? 'var(--primary)' : 'var(--line)' }}
           >
             ➤
           </button>
@@ -121,13 +121,13 @@ export default function AsistenteTab({ userId, homeId }: { userId: string; homeI
       </div>
 
       {docsLoaded && docs.length === 0 && (
-        <p className="text-xs rounded-xl px-3 py-2" style={{ background: '#fef3c7', color: '#92400e' }}>
+        <p className="text-xs rounded-xl px-3 py-2" style={{ background: 'var(--warn-soft)', color: 'var(--warn)' }}>
           Todavía no cargaste documentos. Agregá el reglamento y el manual para que pueda responder sobre el edificio.
         </p>
       )}
 
       <button onClick={() => setShowDocs(s => !s)}
-        className="w-full py-3 rounded-2xl text-sm font-semibold text-gray-600 bg-white shadow-sm">
+        className="w-full py-3 rounded-2xl text-sm font-semibold text-ink-2 card">
         📄 Documentos del asistente ({docs.length}) {showDocs ? '▴' : '▾'}
       </button>
       {showDocs && <DocumentsManager userId={userId} homeId={homeId} docs={docs} onChanged={loadDocs} />}
@@ -169,33 +169,33 @@ function DocumentsManager({ userId, homeId, docs, onChanged }: { userId: string;
     onChanged()
   }
 
-  const inputCls = 'w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 outline-none focus:border-indigo-400'
+  const inputCls = 'w-full px-3 py-2 rounded-xl border border-line bg-surface text-sm text-ink placeholder-muted-2 outline-none focus:border-primary'
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3">
+    <div className="card p-4 space-y-3">
       {docs.map(d => (
         <div key={d.id} className="flex items-center justify-between gap-2">
-          <p className="text-sm text-gray-700 truncate">📄 {d.name}</p>
-          <button onClick={() => remove(d)} className="text-xs text-gray-400 hover:text-red-500 px-1">✕</button>
+          <p className="text-sm text-ink truncate">📄 {d.name}</p>
+          <button onClick={() => remove(d)} className="text-xs text-muted-2 hover:text-danger px-1">✕</button>
         </div>
       ))}
 
-      <div className="space-y-2 pt-2 border-t border-gray-100">
-        <p className="text-xs font-medium text-gray-500">Agregar documento (texto)</p>
+      <div className="space-y-2 pt-2 border-t border-line">
+        <p className="text-xs font-medium text-muted">Agregar documento (texto)</p>
         <input className={inputCls} placeholder="Nombre (ej: Reglamento interno)" value={name} onChange={e => setName(e.target.value)} />
         <textarea className={inputCls} rows={5} placeholder="Pegá el texto acá o subí un .txt / .md"
           value={content} onChange={e => setContent(e.target.value)} />
         <input ref={fileRef} type="file" accept=".txt,.md,text/plain,text/markdown" className="hidden"
           onChange={e => { const f = e.target.files?.[0]; if (f) loadFile(f); e.target.value = '' }} />
         <div className="flex gap-2">
-          <button onClick={() => fileRef.current?.click()} className="px-3 py-2 rounded-xl text-sm text-gray-600 bg-gray-100">Subir archivo</button>
+          <button onClick={() => fileRef.current?.click()} className="px-3 py-2 rounded-xl text-sm text-ink-2 bg-surface-2">Subir archivo</button>
           <button onClick={save} disabled={busy}
             className="flex-1 py-2 rounded-xl text-sm font-semibold text-white"
-            style={{ background: 'linear-gradient(135deg, #667eea, #764ba2)' }}>
+            style={{ background: 'var(--grad)' }}>
             {busy ? 'Guardando…' : 'Guardar documento'}
           </button>
         </div>
-        {err && <p className="text-xs text-red-500">{err}</p>}
+        {err && <p className="text-xs text-danger">{err}</p>}
       </div>
     </div>
   )

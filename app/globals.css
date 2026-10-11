@@ -1,17 +1,207 @@
 @import "tailwindcss";
 
+/* ───────────── Design tokens ─────────────
+   Light por defecto, dark automático según el sistema.
+   Los componentes usan utilidades semánticas (bg-surface, text-ink, border-line…)
+   o var(--token) en estilos inline, nunca colores sueltos. */
 :root {
-  --background: #f8f7ff;
-  --foreground: #1a1a2e;
+  --bg: #f5f6fa;
+  --surface: #ffffff;
+  --surface-2: #f1f3f8;
+  --line: #e6e8ef;
+  --ink: #12141c;
+  --ink-2: #3b4252;
+  --muted: #6b7280;
+  --muted-2: #9aa1b0;
+
+  --primary: #0a8f69;          /* texto / acentos */
+  --primary-soft: #e0f5ed;     /* fondos suaves */
+  --primary-softer: #f0faf6;
+  --grad: linear-gradient(135deg, #10b981 0%, #0b7d6b 100%);
+  --grad-hero: linear-gradient(145deg, #0f9d77 0%, #0a6e63 60%, #0b5560 100%);
+
+  --accent: #6366f1;           /* USD */
+  --accent-soft: #e8e9fd;
+  --eur: #0284c7;
+  --eur-soft: #e0f2fe;
+
+  --income: #15803d;
+  --income-soft: #e3f6ea;
+  --savings: #2563eb;
+  --savings-soft: #e6eefe;
+  --danger: #dc2626;
+  --danger-soft: #fdecec;
+  --warn: #b45309;
+  --warn-soft: #fff4e0;
+  --warn-line: #fcd9a0;
+  --owed: #c2410c;
+  --owed-soft: #fff1e6;
+
+  --overlay: rgba(10, 12, 20, 0.55);
+  --shadow-card: 0 1px 2px rgba(18, 20, 28, 0.04), 0 4px 16px rgba(18, 20, 28, 0.04);
+  --shadow-float: 0 10px 30px rgba(10, 143, 105, 0.35);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0c0e13;
+    --surface: #151821;
+    --surface-2: #1d212c;
+    --line: #272c39;
+    --ink: #eef0f5;
+    --ink-2: #c3c8d4;
+    --muted: #9099ab;
+    --muted-2: #6b7385;
+
+    --primary: #34d399;
+    --primary-soft: #11332a;
+    --primary-softer: #0f2620;
+    --grad: linear-gradient(135deg, #0f9d77 0%, #0a6e63 100%);
+    --grad-hero: linear-gradient(145deg, #0d7c60 0%, #0a5a55 60%, #0b3f4a 100%);
+
+    --accent: #a5b4fc;
+    --accent-soft: #23264a;
+    --eur: #38bdf8;
+    --eur-soft: #10303f;
+
+    --income: #4ade80;
+    --income-soft: #12301f;
+    --savings: #60a5fa;
+    --savings-soft: #15284a;
+    --danger: #f87171;
+    --danger-soft: #3a1818;
+    --warn: #fbbf24;
+    --warn-soft: #3a2c10;
+    --warn-line: #5b4417;
+    --owed: #fb923c;
+    --owed-soft: #3a2110;
+
+    --overlay: rgba(0, 0, 0, 0.65);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-float: 0 10px 30px rgba(0, 0, 0, 0.5);
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-muted-2: var(--muted-2);
+  --color-primary: var(--primary);
+  --color-primary-soft: var(--primary-soft);
+  --color-income: var(--income);
+  --color-savings: var(--savings);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-owed: var(--owed);
+}
+
+html {
+  color-scheme: light dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--bg);
+  color: var(--ink);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
 }
 
 * {
   box-sizing: border-box;
 }
+
+/* Cifras alineadas (importes) */
+.num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* ───────────── Componentes base ───────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 1.25rem;
+  box-shadow: var(--shadow-card);
+}
+
+.field {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border-radius: 0.875rem;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.field::placeholder {
+  color: var(--muted-2);
+}
+.field:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
+}
+
+.btn-primary {
+  background: var(--grad);
+  color: #fff;
+  font-weight: 600;
+  border-radius: 0.875rem;
+  transition: transform 0.1s, opacity 0.15s;
+}
+.btn-primary:active {
+  transform: scale(0.97);
+}
+.btn-primary:disabled {
+  opacity: 0.6;
+}
+
+.btn-ghost {
+  background: var(--surface);
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+  font-weight: 600;
+  border-radius: 0.875rem;
+}
+
+/* Selector tipo "pill" (moneda, cuotas, categoría) */
+.pill {
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  transition: all 0.12s;
+}
+.pill[data-active="true"] {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+/* Barra inferior de navegación: respeta el área segura del iPhone */
+.safe-bottom {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+@keyframes sheet-up {
+  from { transform: translateY(24px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+.sheet-in {
+  animation: sheet-up 0.22s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-in { animation: none; }
+}
+
+/* Sin flechitas en los campos numéricos (el monto es grande y se escribe con el teclado) */
+input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }

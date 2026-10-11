@@ -82,10 +82,10 @@ export default function ChatWidget({ onExpenseSaved, hidden }: { onExpenseSaved?
       <button
         onClick={() => setOpen(o => !o)}
         style={{
-          position: 'fixed', bottom: 24, left: 24, zIndex: 1001,
-          width: 64, height: 64, borderRadius: '50%',
-          background: 'linear-gradient(135deg, #10b981, #059669)',
-          border: 'none', cursor: 'pointer', boxShadow: '0 4px 16px rgba(16,185,129,0.4)',
+          position: 'fixed', bottom: 92, left: 16, zIndex: 1001,
+          width: 56, height: 56, borderRadius: '50%',
+          background: 'var(--grad)', color: '#fff',
+          border: 'none', cursor: 'pointer', boxShadow: 'var(--shadow-float)',
           fontSize: 26, display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
         title="Asistente de gastos"
@@ -95,15 +95,15 @@ export default function ChatWidget({ onExpenseSaved, hidden }: { onExpenseSaved?
 
       {open && (
         <div style={{
-          position: 'fixed', bottom: 100, left: 24, zIndex: 1001,
-          width: 340, maxWidth: 'calc(100vw - 48px)',
-          background: '#fff', borderRadius: 16,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+          position: 'fixed', bottom: 158, left: 16, zIndex: 1001,
+          width: 340, maxWidth: 'calc(100vw - 32px)',
+          background: 'var(--surface)', borderRadius: 20,
+          boxShadow: '0 12px 40px rgba(0,0,0,0.25)',
           display: 'flex', flexDirection: 'column',
-          overflow: 'hidden', border: '1px solid #e5e7eb',
+          overflow: 'hidden', border: '1px solid var(--line)',
         }}>
           <div style={{
-            padding: '12px 16px', background: 'linear-gradient(135deg, #10b981, #059669)',
+            padding: '12px 16px', background: 'var(--grad)',
             color: '#fff', fontWeight: 600, fontSize: 15,
             display: 'flex', alignItems: 'center', gap: 8,
           }}>
@@ -116,8 +116,8 @@ export default function ChatWidget({ onExpenseSaved, hidden }: { onExpenseSaved?
                 <div style={{
                   maxWidth: '80%', padding: '8px 12px', borderRadius: 12,
                   fontSize: 14, lineHeight: 1.5, whiteSpace: 'pre-line',
-                  background: m.role === 'user' ? '#10b981' : '#f3f4f6',
-                  color: m.role === 'user' ? '#fff' : '#111827',
+                  background: m.role === 'user' ? 'var(--grad)' : 'var(--surface-2)',
+                  color: m.role === 'user' ? '#fff' : 'var(--ink)',
                   borderBottomRightRadius: m.role === 'user' ? 4 : 12,
                   borderBottomLeftRadius: m.role === 'bot' ? 4 : 12,
                 }}>
@@ -127,7 +127,7 @@ export default function ChatWidget({ onExpenseSaved, hidden }: { onExpenseSaved?
             ))}
             {loading && (
               <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                <div style={{ padding: '8px 12px', borderRadius: 12, background: '#f3f4f6', fontSize: 14, color: '#6b7280' }}>
+                <div style={{ padding: '8px 12px', borderRadius: 12, background: 'var(--surface-2)', fontSize: 14, color: 'var(--muted)' }}>
                   ···
                 </div>
               </div>
@@ -135,7 +135,7 @@ export default function ChatWidget({ onExpenseSaved, hidden }: { onExpenseSaved?
             <div ref={bottomRef} />
           </div>
 
-          <div style={{ padding: '8px 12px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ padding: '8px 12px', borderTop: '1px solid var(--line)', display: 'flex', gap: 8, alignItems: 'center' }}>
             <input
               ref={fileInputRef}
               type="file"
@@ -154,7 +154,7 @@ export default function ChatWidget({ onExpenseSaved, hidden }: { onExpenseSaved?
               style={{
                 width: 36, height: 36, borderRadius: 8, border: 'none',
                 cursor: loading ? 'default' : 'pointer',
-                background: '#f0fdf4', fontSize: 18,
+                background: 'var(--income-soft)', fontSize: 18,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 flexShrink: 0, opacity: loading ? 0.5 : 1,
               }}
@@ -169,8 +169,8 @@ export default function ChatWidget({ onExpenseSaved, hidden }: { onExpenseSaved?
               disabled={loading}
               style={{
                 flex: 1, padding: '8px 12px', borderRadius: 8, fontSize: 14,
-                border: '1px solid #d1d5db', outline: 'none',
-                background: loading ? '#f9fafb' : '#fff',
+                border: '1px solid var(--line)', outline: 'none', color: 'var(--ink)',
+                background: loading ? 'var(--surface-2)' : 'var(--surface)',
               }}
             />
             <button
@@ -178,7 +178,7 @@ export default function ChatWidget({ onExpenseSaved, hidden }: { onExpenseSaved?
               disabled={loading || !input.trim()}
               style={{
                 width: 36, height: 36, borderRadius: 8, border: 'none', cursor: 'pointer',
-                background: input.trim() && !loading ? '#10b981' : '#d1d5db',
+                background: input.trim() && !loading ? 'var(--grad)' : 'var(--surface-2)', color: input.trim() && !loading ? '#fff' : 'var(--muted-2)',
                 fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center',
                 flexShrink: 0,
               }}

@@ -140,18 +140,18 @@ export default function ChargeCard({ charge, receipts, settings, userId, homeId,
     onChanged()
   }
 
-  const inputCls = 'w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 outline-none focus:border-indigo-400'
+  const inputCls = 'w-full px-3 py-2 rounded-xl border border-line bg-surface text-sm text-ink placeholder-muted-2 outline-none focus:border-primary'
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3" style={{ opacity: busy ? 0.7 : 1 }}>
+    <div className="card p-4 space-y-3" style={{ opacity: busy ? 0.7 : 1 }}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-semibold text-gray-800 truncate">{info.emoji} {chargeTitle(charge)}</p>
+          <p className="font-semibold text-ink truncate">{info.emoji} {chargeTitle(charge)}</p>
           {isRepeatable(charge.kind) && charge.kind !== 'otro' && (
-            <p className="text-xs text-gray-400">{info.label}</p>
+            <p className="text-xs text-muted-2">{info.label}</p>
           )}
-          <p className="text-lg font-bold text-gray-900">{formatMoney(charge.amount, charge.currency)}</p>
-          <p className="text-xs text-gray-400">
+          <p className="text-lg font-bold text-ink">{formatMoney(charge.amount, charge.currency)}</p>
+          <p className="text-xs text-muted-2">
             {charge.due_date ? `Vence ${formatDayMonth(charge.due_date)}` : 'Sin vencimiento'}
             {charge.paid && charge.paid_at ? ` · Pagado ${formatDayMonth(charge.paid_at)}` : ''}
           </p>
@@ -161,43 +161,43 @@ export default function ChargeCard({ charge, receipts, settings, userId, homeId,
           disabled={busy}
           className="flex-shrink-0 px-3 py-2 rounded-xl text-xs font-semibold"
           style={charge.paid
-            ? { background: '#dcfce7', color: '#15803d' }
-            : { background: '#f3f4f6', color: '#6b7280' }}
+            ? { background: 'var(--income-soft)', color: 'var(--income)' }
+            : { background: 'var(--surface-2)', color: 'var(--muted)' }}
         >
           {charge.paid ? '✓ Pagado' : 'Marcar pagado'}
         </button>
       </div>
 
       {charge.paid && !hasProof && (
-        <p className="text-xs rounded-lg px-3 py-2" style={{ background: '#fef3c7', color: '#92400e' }}>
+        <p className="text-xs rounded-lg px-3 py-2" style={{ background: 'var(--warn-soft)', color: 'var(--warn)' }}>
           ⚠️ Falta subir el comprobante de pago
         </p>
       )}
 
       {charge.kind === 'luz' && settings?.ute_reference && (
-        <p className="text-xs text-gray-500">Trámite UTE: <span className="font-mono">{settings.ute_reference}</span></p>
+        <p className="text-xs text-muted">Trámite UTE: <span className="font-mono">{settings.ute_reference}</span></p>
       )}
       {charge.kind === 'gastos_comunes' && settings?.admin_url && (
         <a href={settings.admin_url} target="_blank" rel="noopener noreferrer"
-          className="inline-block text-xs font-semibold" style={{ color: '#667eea' }}>
+          className="inline-block text-xs font-semibold" style={{ color: 'var(--primary)' }}>
           Abrir web de la administración ↗
         </a>
       )}
-      {charge.notes && !editing && <p className="text-xs text-gray-500 whitespace-pre-line">{charge.notes}</p>}
+      {charge.notes && !editing && <p className="text-xs text-muted whitespace-pre-line">{charge.notes}</p>}
 
       {/* Archivos */}
       <div className="space-y-2">
         {SLOTS.map(slot => {
           const files = receipts.filter(r => r.doc_type === slot.type)
           return (
-            <div key={slot.type} className="rounded-xl px-3 py-2" style={{ background: '#f8f9ff' }}>
+            <div key={slot.type} className="rounded-xl px-3 py-2" style={{ background: 'var(--primary-softer)' }}>
               <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-gray-600">{slot.label}</p>
+                <p className="text-xs font-medium text-ink-2">{slot.label}</p>
                 <button
                   onClick={() => fileInputs.current[slot.type]?.click()}
                   disabled={busy}
                   className="text-xs font-semibold"
-                  style={{ color: '#667eea' }}
+                  style={{ color: 'var(--primary)' }}
                 >
                   + Subir
                 </button>
@@ -215,10 +215,10 @@ export default function ChargeCard({ charge, receipts, settings, userId, homeId,
               </div>
               {files.map(r => (
                 <div key={r.id} className="flex items-center justify-between gap-2 mt-1.5">
-                  <button onClick={() => openReceipt(r)} className="text-xs text-left text-gray-700 truncate hover:underline">
+                  <button onClick={() => openReceipt(r)} className="text-xs text-left text-ink truncate hover:underline">
                     📎 {r.file_name}{r.size_bytes ? ` · ${formatBytes(r.size_bytes)}` : ''}
                   </button>
-                  <button onClick={() => deleteReceipt(r)} disabled={busy} className="text-xs text-gray-400 hover:text-red-500 px-1">✕</button>
+                  <button onClick={() => deleteReceipt(r)} disabled={busy} className="text-xs text-muted-2 hover:text-danger px-1">✕</button>
                 </div>
               ))}
             </div>
@@ -226,7 +226,7 @@ export default function ChargeCard({ charge, receipts, settings, userId, homeId,
         })}
       </div>
 
-      {err && <p className="text-xs text-red-500">{err}</p>}
+      {err && <p className="text-xs text-danger">{err}</p>}
 
       {editing ? (
         <div className="space-y-2 pt-1">
@@ -241,11 +241,11 @@ export default function ChargeCard({ charge, receipts, settings, userId, homeId,
               <option value="EUR">EUR</option>
             </select>
           </div>
-          <label className="block text-xs text-gray-500">Vencimiento
+          <label className="block text-xs text-muted">Vencimiento
             <input type="date" className={`${inputCls} mt-1`} value={dueDate} onChange={e => setDueDate(e.target.value)} />
           </label>
           {charge.paid && (
-            <label className="block text-xs text-gray-500">Fecha de pago
+            <label className="block text-xs text-muted">Fecha de pago
               <input type="date" className={`${inputCls} mt-1`} value={paidAt} onChange={e => setPaidAt(e.target.value)} />
             </label>
           )}
@@ -253,16 +253,16 @@ export default function ChargeCard({ charge, receipts, settings, userId, homeId,
           <div className="flex gap-2">
             <button onClick={saveEdit} disabled={busy}
               className="flex-1 py-2 rounded-xl text-sm font-semibold text-white"
-              style={{ background: 'linear-gradient(135deg, #667eea, #764ba2)' }}>
+              style={{ background: 'var(--grad)' }}>
               Guardar
             </button>
-            <button onClick={() => setEditing(false)} className="px-4 py-2 rounded-xl text-sm text-gray-500 bg-gray-100">Cancelar</button>
+            <button onClick={() => setEditing(false)} className="px-4 py-2 rounded-xl text-sm text-muted bg-surface-2">Cancelar</button>
           </div>
         </div>
       ) : (
         <div className="flex gap-4 pt-1">
-          <button onClick={startEdit} className="text-xs font-medium text-gray-500 hover:text-gray-800">✏️ Editar</button>
-          <button onClick={deleteCharge} disabled={busy} className="text-xs font-medium text-gray-400 hover:text-red-500">🗑️ Eliminar</button>
+          <button onClick={startEdit} className="text-xs font-medium text-muted hover:text-ink">✏️ Editar</button>
+          <button onClick={deleteCharge} disabled={busy} className="text-xs font-medium text-muted-2 hover:text-danger">🗑️ Eliminar</button>
         </div>
       )}
     </div>

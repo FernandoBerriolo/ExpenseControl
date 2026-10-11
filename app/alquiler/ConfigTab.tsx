@@ -55,13 +55,13 @@ export default function ConfigTab({ userId, homeId, settings, onSaved }: {
     onSaved()
   }
 
-  const inputCls = 'w-full px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-800 outline-none focus:border-indigo-400'
+  const inputCls = 'w-full px-3 py-2 rounded-xl border border-line bg-surface text-sm text-ink placeholder-muted-2 outline-none focus:border-primary'
 
   return (
     <div className="space-y-4">
-    <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3">
+    <div className="card p-4 space-y-3">
       <div>
-        <label className="text-xs font-medium text-gray-500">Valor del alquiler mensual</label>
+        <label className="text-xs font-medium text-muted">Valor del alquiler mensual</label>
         <div className="flex gap-2 mt-1">
           <input className={inputCls} inputMode="decimal" placeholder="Ej: 25.000" value={rent} onChange={e => setRent(e.target.value)} />
           <select className={`${inputCls} !w-28`} value={currency} onChange={e => setCurrency(e.target.value as Currency)}>
@@ -70,45 +70,45 @@ export default function ConfigTab({ userId, homeId, settings, onSaved }: {
             <option value="EUR">EUR</option>
           </select>
         </div>
-        <p className="text-xs text-gray-400 mt-1">Se usa al armar cada mes. Podés cambiarlo en un mes puntual desde Pagos.</p>
+        <p className="text-xs text-muted-2 mt-1">Se usa al armar cada mes. Podés cambiarlo en un mes puntual desde Pagos.</p>
       </div>
 
       <div>
-        <label className="text-xs font-medium text-gray-500">Nro. de trámite UTE</label>
+        <label className="text-xs font-medium text-muted">Nro. de trámite UTE</label>
         <input className={`${inputCls} mt-1`} value={ute} onChange={e => setUte(e.target.value)} />
       </div>
 
       <div>
-        <label className="text-xs font-medium text-gray-500">Web de gastos comunes</label>
+        <label className="text-xs font-medium text-muted">Web de gastos comunes</label>
         <input className={`${inputCls} mt-1`} placeholder="https://…" value={adminUrl} onChange={e => setAdminUrl(e.target.value)} />
       </div>
 
       <div>
-        <label className="text-xs font-medium text-gray-500">Datos del apartamento</label>
+        <label className="text-xs font-medium text-muted">Datos del apartamento</label>
         <textarea className={`${inputCls} mt-1`} rows={4} value={unitInfo} onChange={e => setUnitInfo(e.target.value)}
           placeholder="Piso, apto, garage, cerradura… Lo usa el asistente para responder sobre tu caso." />
       </div>
 
-      {err && <p className="text-xs text-red-500">{err}</p>}
-      {msg && <p className="text-xs text-green-600">{msg}</p>}
+      {err && <p className="text-xs text-danger">{err}</p>}
+      {msg && <p className="text-xs text-income">{msg}</p>}
 
       <button onClick={save} disabled={busy}
         className="w-full py-3 rounded-xl text-sm font-semibold text-white"
-        style={{ background: 'linear-gradient(135deg, #667eea, #764ba2)' }}>
+        style={{ background: 'var(--grad)' }}>
         {busy ? 'Guardando…' : 'Guardar'}
       </button>
     </div>
 
-    <div className="bg-white rounded-2xl shadow-sm p-4 space-y-1">
-      <p className="text-xs font-medium text-gray-500">👥 Compartido con</p>
+    <div className="card p-4 space-y-1">
+      <p className="text-xs font-medium text-muted">👥 Compartido con</p>
       {members.length === 0 ? (
-        <p className="text-sm text-gray-400">Solo vos</p>
+        <p className="text-sm text-muted-2">Solo vos</p>
       ) : members.map(m => (
-        <p key={m.user_id} className="text-sm text-gray-700">
+        <p key={m.user_id} className="text-sm text-ink">
           {m.user_email ?? 'Usuario'}{m.user_id === userId ? ' (vos)' : ''}
         </p>
       ))}
-      <p className="text-xs text-gray-400 pt-1">Todos los miembros ven y editan los mismos pagos, comprobantes y documentos.</p>
+      <p className="text-xs text-muted-2 pt-1">Todos los miembros ven y editan los mismos pagos, comprobantes y documentos.</p>
     </div>
     </div>
   )

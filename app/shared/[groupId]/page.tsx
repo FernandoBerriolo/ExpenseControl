@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase, type SharedGroup, type SharedGroupMember, type SharedGroupExpense, type SharedExpensePayment, SHARED_THEMES } from '@/lib/supabase'
+import BottomNav from '@/app/components/BottomNav'
 
 function fmtMoney(amount: number, currency: string) {
   if (currency === 'USD') return `USD ${amount.toLocaleString('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -187,8 +188,8 @@ export default function GroupDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">
-        <p className="text-gray-500">Cargando...</p>
+      <div className="min-h-screen bg-bg text-ink pb-32 flex items-center justify-center">
+        <p className="text-muted-2">Cargando...</p>
       </div>
     )
   }
@@ -196,11 +197,11 @@ export default function GroupDetailPage() {
   if (!group) return null
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-bg text-ink pb-32">
       <div className="max-w-lg mx-auto px-4 py-6">
         {/* Header */}
         <div className="flex items-start gap-3 mb-4">
-          <button onClick={() => router.push('/shared')} className="text-gray-400 hover:text-white transition-colors mt-1">
+          <button onClick={() => router.push('/shared')} className="text-muted hover:text-ink transition-colors mt-1">
             ←
           </button>
           <div className="flex-1 min-w-0">
@@ -208,27 +209,27 @@ export default function GroupDetailPage() {
               <span className="text-2xl">{themeInfo?.emoji}</span>
               <h1 className="text-xl font-bold truncate">{group.name}</h1>
             </div>
-            <p className="text-sm text-gray-400">{members.length} miembro{members.length !== 1 ? 's' : ''} · {group.currency}</p>
+            <p className="text-sm text-muted">{members.length} miembro{members.length !== 1 ? 's' : ''} · {group.currency}</p>
           </div>
           <button
             onClick={copyCode}
-            className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors"
+            className="text-xs bg-surface-2 hover:bg-line text-ink-2 px-3 py-1.5 rounded-lg transition-colors"
           >
             {codeCopied ? '✓ Copiado' : `# ${group.invite_code}`}
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-gray-900 rounded-xl p-1 mb-4">
+        <div className="flex gap-1 bg-surface-2 rounded-xl p-1 mb-4">
           <button
             onClick={() => setTab('expenses')}
-            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${tab === 'expenses' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}
+            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${tab === 'expenses' ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'}`}
           >
             Gastos
           </button>
           <button
             onClick={() => setTab('summary')}
-            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${tab === 'summary' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}
+            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${tab === 'summary' ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'}`}
           >
             Resumen por persona
           </button>
@@ -238,43 +239,43 @@ export default function GroupDetailPage() {
           <>
             <button
               onClick={() => setShowAddExpense(true)}
-              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2.5 rounded-xl mb-4 transition-colors"
+              className="w-full [background:var(--grad)] hover:brightness-110 text-white font-medium py-2.5 rounded-xl mb-4 transition-colors"
             >
               + Agregar gasto
             </button>
 
             {showAddExpense && (
-              <div className="bg-gray-900 rounded-2xl p-4 mb-4 border border-gray-800">
+              <div className="bg-surface rounded-2xl p-4 mb-4 border border-line">
                 <h2 className="font-semibold mb-3">Nuevo gasto</h2>
                 <input
-                  className="w-full bg-gray-800 rounded-xl px-4 py-2.5 text-sm mb-3 outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full bg-surface-2 rounded-xl px-4 py-2.5 text-sm mb-3 outline-none focus:ring-2 focus:ring-primary"
                   placeholder="Descripción (ej: Asado, Hotel, Combustible)"
                   value={expDesc}
                   onChange={e => setExpDesc(e.target.value)}
                 />
                 <input
-                  className="w-full bg-gray-800 rounded-xl px-4 py-2.5 text-sm mb-3 outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full bg-surface-2 rounded-xl px-4 py-2.5 text-sm mb-3 outline-none focus:ring-2 focus:ring-primary"
                   placeholder={`Monto total (${group.currency})`}
                   type="text"
                   inputMode="decimal"
                   value={expAmount}
                   onChange={e => setExpAmount(e.target.value)}
                 />
-                <p className="text-xs text-gray-500 mb-3">
+                <p className="text-xs text-muted-2 mb-3">
                   Se divide entre {members.length} persona{members.length !== 1 ? 's' : ''} = {members.length > 0 && expAmount ? fmtMoney(parseFloat(expAmount.replace(',', '.') || '0') / members.length, group.currency) : '—'} c/u
                 </p>
-                {expError && <p className="text-red-400 text-sm mb-2">{expError}</p>}
+                {expError && <p className="text-danger text-sm mb-2">{expError}</p>}
                 <div className="flex gap-2">
                   <button
                     onClick={handleAddExpense}
                     disabled={expLoading}
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium py-2 rounded-xl"
+                    className="flex-1 [background:var(--grad)] hover:brightness-110 disabled:opacity-50 text-white font-medium py-2 rounded-xl"
                   >
                     {expLoading ? 'Guardando...' : 'Guardar'}
                   </button>
                   <button
                     onClick={() => { setShowAddExpense(false); setExpDesc(''); setExpAmount(''); setExpError('') }}
-                    className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium py-2 rounded-xl"
+                    className="flex-1 bg-surface-2 hover:bg-line text-ink-2 font-medium py-2 rounded-xl"
                   >
                     Cancelar
                   </button>
@@ -283,7 +284,7 @@ export default function GroupDetailPage() {
             )}
 
             {expenses.length === 0 ? (
-              <div className="text-center text-gray-500 py-12">
+              <div className="text-center text-muted-2 py-12">
                 <p className="text-4xl mb-3">🧾</p>
                 <p>Sin gastos todavía.</p>
               </div>
@@ -299,19 +300,19 @@ export default function GroupDetailPage() {
                   const isExpanding = payingExpenseId === exp.id
 
                   return (
-                    <div key={exp.id} className="bg-gray-900 rounded-2xl border border-gray-800">
+                    <div key={exp.id} className="bg-surface rounded-2xl border border-line">
                       <div className="p-4">
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <p className="font-semibold truncate">{exp.description}</p>
-                            <p className="text-sm text-gray-400">
+                            <p className="text-sm text-muted">
                               Total: {fmtMoney(exp.total_amount, exp.currency)} · {fmtMoney(perPerson, exp.currency)} c/u
                             </p>
                           </div>
                           {exp.created_by === userId && (
                             <button
                               onClick={() => setDeleteExpenseId(exp.id)}
-                              className="text-gray-600 hover:text-red-400 transition-colors text-lg leading-none"
+                              className="text-muted-2 hover:text-danger transition-colors text-lg leading-none"
                             >
                               ×
                             </button>
@@ -320,11 +321,11 @@ export default function GroupDetailPage() {
 
                         {/* Progress bar */}
                         <div className="mt-3">
-                          <div className="flex justify-between text-xs text-gray-500 mb-1">
+                          <div className="flex justify-between text-xs text-muted-2 mb-1">
                             <span>Pagado: {fmtMoney(totalPaid, exp.currency)}</span>
                             <span>Pendiente: {fmtMoney(Math.max(0, exp.total_amount - totalPaid), exp.currency)}</span>
                           </div>
-                          <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                          <div className="h-1.5 bg-surface-2 rounded-full overflow-hidden">
                             <div
                               className="h-full bg-emerald-500 rounded-full transition-all"
                               style={{ width: `${Math.min(100, (totalPaid / exp.total_amount) * 100)}%` }}
@@ -334,7 +335,7 @@ export default function GroupDetailPage() {
 
                         {/* My status */}
                         <div className="mt-2 flex items-center justify-between">
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${myPending <= 0 ? 'bg-emerald-900 text-emerald-300' : 'bg-amber-900 text-amber-300'}`}>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${myPending <= 0 ? 'bg-primary-soft text-primary' : 'bg-[color:var(--warn-soft)] text-[color:var(--warn)]'}`}>
                             {myPending <= 0 ? '✓ Pagado' : `Debés: ${fmtMoney(myPending, exp.currency)}`}
                           </span>
                           <button
@@ -344,7 +345,7 @@ export default function GroupDetailPage() {
                               setPayNote('')
                               setPayError('')
                             }}
-                            className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+                            className="text-xs text-primary hover:text-primary transition-colors"
                           >
                             {isExpanding ? 'Cerrar' : 'Registrar pago'}
                           </button>
@@ -353,14 +354,14 @@ export default function GroupDetailPage() {
 
                       {/* Payments list */}
                       {expPayments.length > 0 && (
-                        <div className="border-t border-gray-800 px-4 py-2 space-y-1">
+                        <div className="border-t border-line px-4 py-2 space-y-1">
                           {expPayments.map(pay => (
-                            <div key={pay.id} className="flex items-center justify-between text-xs text-gray-400">
+                            <div key={pay.id} className="flex items-center justify-between text-xs text-muted">
                               <span className="truncate flex-1">{pay.user_email.split('@')[0]}: {fmtMoney(Number(pay.amount), exp.currency)}{pay.note ? ` · ${pay.note}` : ''}</span>
                               {pay.user_id === userId && (
                                 <button
                                   onClick={() => setDeletePaymentId(pay.id)}
-                                  className="text-gray-700 hover:text-red-400 transition-colors ml-2"
+                                  className="text-muted-2 hover:text-danger transition-colors ml-2"
                                 >
                                   ×
                                 </button>
@@ -372,10 +373,10 @@ export default function GroupDetailPage() {
 
                       {/* Add payment form */}
                       {isExpanding && (
-                        <div className="border-t border-gray-800 p-4">
+                        <div className="border-t border-line p-4">
                           <p className="text-sm font-medium mb-2">Registrar mi pago</p>
                           <input
-                            className="w-full bg-gray-800 rounded-xl px-4 py-2 text-sm mb-2 outline-none focus:ring-2 focus:ring-emerald-500"
+                            className="w-full bg-surface-2 rounded-xl px-4 py-2 text-sm mb-2 outline-none focus:ring-2 focus:ring-primary"
                             placeholder={`Monto (${exp.currency})`}
                             type="text"
                             inputMode="decimal"
@@ -383,23 +384,23 @@ export default function GroupDetailPage() {
                             onChange={e => setPayAmount(e.target.value)}
                           />
                           <input
-                            className="w-full bg-gray-800 rounded-xl px-4 py-2 text-sm mb-2 outline-none focus:ring-2 focus:ring-emerald-500"
+                            className="w-full bg-surface-2 rounded-xl px-4 py-2 text-sm mb-2 outline-none focus:ring-2 focus:ring-primary"
                             placeholder="Nota (opcional)"
                             value={payNote}
                             onChange={e => setPayNote(e.target.value)}
                           />
-                          {payError && <p className="text-red-400 text-xs mb-2">{payError}</p>}
+                          {payError && <p className="text-danger text-xs mb-2">{payError}</p>}
                           <div className="flex gap-2">
                             <button
                               onClick={() => handleAddPayment(exp.id)}
                               disabled={payLoading}
-                              className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-xl"
+                              className="flex-1 [background:var(--grad)] hover:brightness-110 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-xl"
                             >
                               {payLoading ? 'Guardando...' : 'Guardar pago'}
                             </button>
                             <button
                               onClick={() => setPayingExpenseId(null)}
-                              className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-xl"
+                              className="flex-1 bg-surface-2 hover:bg-line text-ink-2 text-sm font-medium py-2 rounded-xl"
                             >
                               Cancelar
                             </button>
@@ -409,7 +410,7 @@ export default function GroupDetailPage() {
 
                       {/* Delete expense confirm */}
                       {deleteExpenseId === exp.id && (
-                        <div className="border-t border-gray-800 p-4 bg-red-950 rounded-b-2xl">
+                        <div className="border-t border-line p-4 bg-danger-soft rounded-b-2xl">
                           <p className="text-sm mb-3">¿Eliminar este gasto y todos sus pagos?</p>
                           <div className="flex gap-2">
                             <button
@@ -420,7 +421,7 @@ export default function GroupDetailPage() {
                             </button>
                             <button
                               onClick={() => setDeleteExpenseId(null)}
-                              className="flex-1 bg-gray-800 text-gray-300 text-sm font-medium py-2 rounded-xl"
+                              className="flex-1 bg-surface-2 text-ink-2 text-sm font-medium py-2 rounded-xl"
                             >
                               Cancelar
                             </button>
@@ -430,7 +431,7 @@ export default function GroupDetailPage() {
 
                       {/* Delete payment confirm */}
                       {deletePaymentId && expPayments.some(p => p.id === deletePaymentId) && (
-                        <div className="border-t border-gray-800 p-4 bg-red-950 rounded-b-2xl">
+                        <div className="border-t border-line p-4 bg-danger-soft rounded-b-2xl">
                           <p className="text-sm mb-3">¿Eliminar este pago?</p>
                           <div className="flex gap-2">
                             <button
@@ -441,7 +442,7 @@ export default function GroupDetailPage() {
                             </button>
                             <button
                               onClick={() => setDeletePaymentId(null)}
-                              className="flex-1 bg-gray-800 text-gray-300 text-sm font-medium py-2 rounded-xl"
+                              className="flex-1 bg-surface-2 text-ink-2 text-sm font-medium py-2 rounded-xl"
                             >
                               Cancelar
                             </button>
@@ -456,13 +457,13 @@ export default function GroupDetailPage() {
 
             {/* Total */}
             {expenses.length > 0 && (
-              <div className="mt-4 bg-gray-900 rounded-2xl p-4 border border-gray-800">
+              <div className="mt-4 bg-surface rounded-2xl p-4 border border-line">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-400">Total del grupo</span>
+                  <span className="text-muted">Total del grupo</span>
                   <span className="font-semibold">{fmtMoney(totalAmount, group.currency)}</span>
                 </div>
                 <div className="flex justify-between text-sm mt-1">
-                  <span className="text-gray-400">Por persona</span>
+                  <span className="text-muted">Por persona</span>
                   <span className="font-semibold">{members.length > 0 ? fmtMoney(totalAmount / members.length, group.currency) : '—'}</span>
                 </div>
               </div>
@@ -473,28 +474,28 @@ export default function GroupDetailPage() {
         {tab === 'summary' && (
           <div className="space-y-3">
             {memberSummaries.length === 0 ? (
-              <div className="text-center text-gray-500 py-12">Sin gastos todavía.</div>
+              <div className="text-center text-muted-2 py-12">Sin gastos todavía.</div>
             ) : (
               memberSummaries.map(ms => (
-                <div key={ms.user_id} className="bg-gray-900 rounded-2xl p-4 border border-gray-800">
+                <div key={ms.user_id} className="bg-surface rounded-2xl p-4 border border-line">
                   <div className="flex items-center justify-between mb-3">
                     <p className="font-medium truncate">{ms.user_email.split('@')[0]}</p>
-                    {ms.user_id === userId && <span className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full">Vos</span>}
+                    {ms.user_id === userId && <span className="text-xs bg-line text-ink-2 px-2 py-0.5 rounded-full">Vos</span>}
                   </div>
                   <div className="space-y-1.5 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-gray-400">Debe pagar</span>
+                      <span className="text-muted">Debe pagar</span>
                       <span>{fmtMoney(ms.shouldPay, group.currency)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-400">Pagado</span>
-                      <span className="text-emerald-400">{fmtMoney(ms.paid, group.currency)}</span>
+                      <span className="text-muted">Pagado</span>
+                      <span className="text-primary">{fmtMoney(ms.paid, group.currency)}</span>
                     </div>
-                    <div className="flex justify-between font-semibold border-t border-gray-800 pt-1.5 mt-1.5">
-                      <span className={ms.pending <= 0 ? 'text-emerald-400' : 'text-amber-400'}>
+                    <div className="flex justify-between font-semibold border-t border-line pt-1.5 mt-1.5">
+                      <span className={ms.pending <= 0 ? 'text-primary' : 'text-[color:var(--warn)]'}>
                         {ms.pending <= 0 ? 'Al día ✓' : 'Pendiente'}
                       </span>
-                      <span className={ms.pending <= 0 ? 'text-emerald-400' : 'text-amber-400'}>
+                      <span className={ms.pending <= 0 ? 'text-primary' : 'text-[color:var(--warn)]'}>
                         {ms.pending <= 0 ? fmtMoney(0, group.currency) : fmtMoney(ms.pending, group.currency)}
                       </span>
                     </div>
@@ -502,16 +503,16 @@ export default function GroupDetailPage() {
 
                   {/* Per-expense breakdown */}
                   {expenses.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-gray-800 space-y-1">
+                    <div className="mt-3 pt-3 border-t border-line space-y-1">
                       {expenses.map(exp => {
                         const perPerson = exp.total_amount / members.length
                         const expPayments = payments.filter(p => p.expense_id === exp.id && p.user_id === ms.user_id)
                         const paid = expPayments.reduce((s, p) => s + Number(p.amount), 0)
                         const pending = Math.max(0, perPerson - paid)
                         return (
-                          <div key={exp.id} className="flex justify-between text-xs text-gray-500">
+                          <div key={exp.id} className="flex justify-between text-xs text-muted-2">
                             <span className="truncate flex-1 mr-2">{exp.description}</span>
-                            <span className={pending <= 0 ? 'text-emerald-600' : 'text-amber-600'}>
+                            <span className={pending <= 0 ? 'text-primary' : 'text-[color:var(--warn)]'}>
                               {pending <= 0 ? '✓' : `- ${fmtMoney(pending, exp.currency)}`}
                             </span>
                           </div>
@@ -525,20 +526,20 @@ export default function GroupDetailPage() {
 
             {/* Group total summary */}
             {expenses.length > 0 && (
-              <div className="bg-gray-900 rounded-2xl p-4 border border-gray-800">
+              <div className="bg-surface rounded-2xl p-4 border border-line">
                 <p className="font-semibold mb-3">Totales del grupo</p>
                 <div className="space-y-1.5 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Total gastos</span>
+                    <span className="text-muted">Total gastos</span>
                     <span>{fmtMoney(totalAmount, group.currency)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Total pagado</span>
-                    <span className="text-emerald-400">{fmtMoney(payments.reduce((s, p) => s + Number(p.amount), 0), group.currency)}</span>
+                    <span className="text-muted">Total pagado</span>
+                    <span className="text-primary">{fmtMoney(payments.reduce((s, p) => s + Number(p.amount), 0), group.currency)}</span>
                   </div>
-                  <div className="flex justify-between font-semibold border-t border-gray-800 pt-1.5 mt-1.5">
-                    <span className="text-amber-400">Total pendiente</span>
-                    <span className="text-amber-400">{fmtMoney(memberSummaries.reduce((s, m) => s + m.pending, 0), group.currency)}</span>
+                  <div className="flex justify-between font-semibold border-t border-line pt-1.5 mt-1.5">
+                    <span className="text-[color:var(--warn)]">Total pendiente</span>
+                    <span className="text-[color:var(--warn)]">{fmtMoney(memberSummaries.reduce((s, m) => s + m.pending, 0), group.currency)}</span>
                   </div>
                 </div>
               </div>
@@ -546,6 +547,7 @@ export default function GroupDetailPage() {
           </div>
         )}
       </div>
+      <BottomNav />
     </div>
   )
 }

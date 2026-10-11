@@ -18,7 +18,7 @@ export default function PWAInstallPrompt() {
   return (
     <div style={{
       position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 9999,
-      background: '#1f2937', color: 'white',
+      background: '#12141c', color: 'white',
       padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '12px',
       boxShadow: '0 -4px 20px rgba(0,0,0,0.3)',
     }}>
@@ -34,7 +34,7 @@ export default function PWAInstallPrompt() {
           setShowIOSHint(false)
         }}
         style={{
-          background: 'none', border: 'none', color: '#9ca3af',
+          background: 'none', border: 'none', color: 'var(--muted-2)',
           fontSize: 22, cursor: 'pointer', padding: '4px',
         }}
       >✕</button>
