@@ -625,7 +625,6 @@ export default function Dashboard() {
   const dateMax = lastDayOfMonth(selectedMonth)
 
   const totalsList = ([['UYU', totalUYU], ['USD', totalUSD], ['EUR', totalEUR]] as const).filter(([, v]) => v > 0)
-  const [mainTotal, ...otherTotals] = totalsList
 
   const iconBtn = 'w-10 h-10 flex items-center justify-center rounded-full text-muted hover:bg-surface-2 transition-colors'
 
@@ -709,18 +708,13 @@ export default function Dashboard() {
 
           <div className="mt-6">
             <p className="text-xs text-white/70 font-medium">Gastos del mes</p>
-            <p className="num text-[2.1rem] leading-tight font-bold mt-1">
-              {mainTotal ? formatMoney(mainTotal[1], mainTotal[0]) : '$ 0,00'}
-            </p>
-            {otherTotals.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-3">
-                {otherTotals.map(([cur, val]) => (
-                  <span key={cur} className="num px-3 py-1 rounded-full bg-white/15 text-sm font-semibold">
-                    {formatMoney(val, cur)}
-                  </span>
-                ))}
-              </div>
-            )}
+            <div className="mt-1 space-y-0.5">
+              {totalsList.length === 0 ? (
+                <p className="num text-[2rem] leading-tight font-bold">$ 0,00</p>
+              ) : totalsList.map(([cur, val]) => (
+                <p key={cur} className="num text-[2rem] leading-tight font-bold">{formatMoney(val, cur)}</p>
+              ))}
+            </div>
             {expenses.length > 0 && (
               <p className="text-xs text-white/70 mt-3">
                 {expenses.length} gasto{expenses.length !== 1 ? 's' : ''} registrado{expenses.length !== 1 ? 's' : ''}
