@@ -64,12 +64,18 @@ export default function PagosTab({ userId, homeId, settings }: { userId: string;
 
   // Resumen del mes
   const paidCount = charges.filter(c => c.paid).length
-  const pendingByCurrency = useMemo(() => {
-    const totals: Partial<Record<Currency, number>> = {}
+  const { paidByCurrency, pendingByCurrency } = useMemo(() => {
+    const paid: Partial<Record<Currency, number>> = {}
+    const pending: Partial<Record<Currency, number>> = {}
     for (const c of charges) {
-      if (!c.paid && c.amount != null) totals[c.currency] = (totals[c.currency] ?? 0) + c.amount
+      if (c.amount == null) continue
+      const bucket = c.paid ? paid : pending
+      bucket[c.currency] = (bucket[c.currency] ?? 0) + c.amount
     }
-    return Object.entries(totals) as [Currency, number][]
+    return {
+      paidByCurrency: Object.entries(paid) as [Currency, number][],
+      pendingByCurrency: Object.entries(pending) as [Currency, number][],
+    }
   }, [charges])
 
   return (
@@ -92,6 +98,9 @@ export default function PagosTab({ userId, homeId, settings }: { userId: string;
           <p className="text-xs text-gray-400 uppercase tracking-wider font-medium">Resumen</p>
           <p className="text-sm text-gray-800 mt-1">
             <strong>{paidCount}</strong> de <strong>{charges.length}</strong> pagados
+          </p>
+          <p className="text-sm font-semibold mt-1" style={{ color: '#15803d' }}>
+            Pagado: {paidByCurrency.length > 0 ? paidByCurrency.map(([cur, n]) => formatMoney(n, cur)).join(' + ') : '$ 0'}
           </p>
           <p className="text-xs text-gray-500 mt-0.5">
             {pendingByCurrency.length > 0
@@ -127,7 +136,7 @@ export default function PagosTab({ userId, homeId, settings }: { userId: string;
               style={{ background: '#e8edff', color: '#667eea' }}
             >
               {generating ? 'Agregando…' : charges.length === 0
-                ? `Armar ${monthLabel(month)} (alquiler, gastos comunes, luz y wifi)`
+                ? `Armar ${monthLabel(month)} (alquiler, gastos comunes, luz, wifi y garantía)`
                 : `Agregar rubros que faltan (${missingMonthly.length})`}
             </button>
           )}
@@ -144,7 +153,7 @@ export default function PagosTab({ userId, homeId, settings }: { userId: string;
           ) : (
             <button onClick={() => setShowAdd(true)}
               className="w-full py-3 rounded-2xl text-sm font-semibold text-gray-500 bg-white shadow-sm">
-              + Agregar gasto (garantía, impuesto, comida, suscripciones…)
+              + Agregar gasto (impuesto, comida, suscripciones…)
             </button>
           )}
         </>
@@ -161,12 +170,11 @@ function AddChargeForm({ userId, homeId, month, presentKinds, onDone, onCancel }
   onDone: () => void
   onCancel: () => void
 }) {
-  // Los rubros fijos solo se ofrecen si todavía no existen este mes; las categorías de otros gastos se pueden repetir
-  const fixedOptions = RENTAL_KINDS.filter(k => !k.repeatable && !presentKinds.has(k.value))
+  // Los rubros del mes (alquiler, gastos comunes, luz, wifi, garantía) se agregan con "Armar mes".
+  // Acá van los rubros sueltos que todavía no existen este mes y las categorías de otros gastos, que se pueden repetir.
+  const fixedOptions = RENTAL_KINDS.filter(k => !k.repeatable && !MONTHLY_KINDS.includes(k.value) && !presentKinds.has(k.value))
   const extraOptions = RENTAL_KINDS.filter(k => k.repeatable)
-  const [kind, setKind] = useState<RentalKind>(
-    (fixedOptions.find(o => !MONTHLY_KINDS.includes(o.value)) ?? extraOptions[0]).value
-  )
+  const [kind, setKind] = useState<RentalKind>((fixedOptions[0] ?? extraOptions[0]).value)
   const info = kindInfo(kind)
   const [label, setLabel] = useState('')
   const [amount, setAmount] = useState('')

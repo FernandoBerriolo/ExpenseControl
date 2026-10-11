@@ -55,7 +55,7 @@ export type RentalMember = {
 export const RENTAL_BUCKET = 'rental-receipts'
 
 // Rubros que se generan automáticamente para cada mes
-export const MONTHLY_KINDS: RentalKind[] = ['alquiler', 'gastos_comunes', 'luz', 'wifi']
+export const MONTHLY_KINDS: RentalKind[] = ['alquiler', 'gastos_comunes', 'luz', 'wifi', 'garantia']
 
 // repeatable = categoría de "otros gastos": puede haber varios por mes y siempre lleva una descripción
 export type KindInfo = { value: RentalKind; label: string; emoji: string; repeatable: boolean; placeholder?: string }
